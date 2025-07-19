@@ -85,8 +85,6 @@ export default function InvoiceForm() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [showCompanyForm, setShowCompanyForm] = useState(false);
   const [showClientForm, setShowClientForm] = useState(false);
-  const [showCompanyList, setShowCompanyList] = useState(false);
-  const [showClientList, setShowClientList] = useState(false);
   const [companyFormData, setCompanyFormData] = useState<Omit<CompanyDetails, 'id'>>({
     name: '',
     email: '',
@@ -128,7 +126,7 @@ export default function InvoiceForm() {
       const { data, error } = await supabase
         .from('companies')
         .select('*');
-      
+
       if (error) {
         console.error('Error fetching companies:', error);
         setToast({ message: 'Failed to fetch companies.', type: 'error', visible: true });
@@ -141,7 +139,7 @@ export default function InvoiceForm() {
       const { data, error } = await supabase
         .from('clients')
         .select('*');
-      
+
       if (error) {
         console.error('Error fetching clients:', error);
         setToast({ message: 'Failed to fetch clients.', type: 'error', visible: true });
@@ -330,7 +328,6 @@ export default function InvoiceForm() {
 
       setSelectedCompany(companyData);
       setShowCompanyForm(false);
-      setShowCompanyList(true);
       setCompanyFormData({ name: '', email: '', address: '', logo: null });
       setToast({ message: 'Company saved successfully.', type: 'success', visible: true });
     } catch (error) {
@@ -389,7 +386,6 @@ export default function InvoiceForm() {
 
       setSelectedClient(clientData);
       setShowClientForm(false);
-      setShowClientList(true);
       setClientFormData({ name: '', email: '', phone: '', vat: '', address: '' });
       setToast({ message: 'Client saved successfully.', type: 'success', visible: true });
     } catch (error) {
@@ -503,9 +499,8 @@ export default function InvoiceForm() {
             initial={{ opacity: 0, y: -50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -50 }}
-            className={`fixed top-4 right-4 p-4 rounded-lg shadow-lg flex items-center space-x-2 z-50 ${
-              toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-            }`}
+            className={`fixed top-4 right-4 p-4 rounded-lg shadow-lg flex items-center space-x-2 z-50 ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+              }`}
           >
             {toast.type === 'success' ? (
               <LucideCheckCircle className="w-5 h-5" />
@@ -649,65 +644,69 @@ export default function InvoiceForm() {
                       </div>
                     ) : (
                       <>
-                        {showCompanyList && (
-                          <div className="space-y-3 mb-6 max-h-40 overflow-y-auto">
-                            {companies.length > 0 ? (
-                              companies.map(company => (
-                                <div
-                                  key={company.id}
-                                  className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${selectedCompany?.id === company.id ? 'bg-purple-500/20 border-purple-400' : 'bg-gray-800/10 border-gray-600'} border hover:border-gray-500`}
-                                  onClick={() => setSelectedCompany(company)}
-                                >
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <p className="text-white font-medium">{company.name}</p>
-                                      {company.email && <p className="text-gray-300 text-sm">{company.email}</p>}
+                        {selectedCompany ? (
+                          <div className="mb-6 p-4 bg-gray-800/20 rounded-lg border border-gray-600">
+                            <div className="flex justify-between items-start gap-4">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start gap-4">
+                                  {selectedCompany.logo && (
+                                    <div className="flex-shrink-0">
+                                      <Image
+                                        src={selectedCompany.logo}
+                                        alt="Company Logo"
+                                        width={80}
+                                        height={80}
+                                        className="h-16 w-16 object-contain rounded border border-gray-600"
+                                      />
                                     </div>
-                                    <div className="flex space-x-1">
-                                      <button
-                                        className="p-1 hover:bg-purple-500/20 rounded transition-colors"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setCompanyFormData({
-                                            name: company.name,
-                                            email: company.email || '',
-                                            address: company.address || '',
-                                            logo: company.logo || null
-                                          });
-                                          setSelectedCompany(company);
-                                          setShowCompanyForm(true);
-                                        }}
-                                      >
-                                        <LucideSquarePen className="w-4 h-4 text-purple-400" />
-                                      </button>
-                                      <button
-                                        className="p-1 hover:bg-red-500/20 rounded transition-colors"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteCompany(company.id);
-                                        }}
-                                      >
-                                        <LucideTrash2 className="w-4 h-4 text-red-400" />
-                                      </button>
-                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-white font-medium truncate">{selectedCompany.name}</p>
+                                    {selectedCompany.email && <p className="text-gray-300 text-sm truncate">{selectedCompany.email}</p>}
+                                    {selectedCompany.address && (
+                                      <p className="text-gray-300 text-sm mt-1 whitespace-pre-line">
+                                        {selectedCompany.address}
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
-                              ))
-                            ) : (
-                              <p className="text-gray-400 text-sm">No companies added yet.</p>
-                            )}
+                              </div>
+                              <div className="flex space-x-1 flex-shrink-0">
+                                <button
+                                  className="p-1 hover:bg-purple-500/20 rounded transition-colors"
+                                  onClick={() => {
+                                    setCompanyFormData({
+                                      name: selectedCompany.name,
+                                      email: selectedCompany.email || '',
+                                      address: selectedCompany.address || '',
+                                      logo: selectedCompany.logo || null
+                                    });
+                                    setShowCompanyForm(true);
+                                  }}
+                                >
+                                  <LucideSquarePen className="w-4 h-4 text-purple-400" />
+                                </button>
+                                <button
+                                  className="p-1 hover:bg-red-500/20 rounded transition-colors"
+                                  onClick={() => handleDeleteCompany(selectedCompany.id)}
+                                >
+                                  <LucideTrash2 className="w-4 h-4 text-red-400" />
+                                </button>
+                              </div>
+                            </div>
                           </div>
+                        ) : (
+                          <p className="text-gray-400 text-sm mb-4">No company selected</p>
                         )}
                         <button
                           onClick={() => {
                             setCompanyFormData({ name: '', email: '', address: '', logo: null });
                             setShowCompanyForm(true);
-                            setShowCompanyList(true);
                           }}
-                          className="w-full mb-6 p-3 bg-purple-500/20 border border-purple-400 rounded-lg text-purple-400 font-medium hover:bg-purple-500/30 hover:border-purple-400 transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg shadow-purple-500/10"
+                          className="w-full p-3 bg-purple-500/20 border border-purple-400 rounded-lg text-purple-400 font-medium hover:bg-purple-500/30 hover:border-purple-400 transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg shadow-purple-500/10"
                         >
                           <LucidePlus className="w-4 h-4" />
-                          <span>Add Company</span>
+                          <span>{selectedCompany ? 'Change Company' : 'Add Company'}</span>
                         </button>
                       </>
                     )}
@@ -796,67 +795,53 @@ export default function InvoiceForm() {
                       </div>
                     ) : (
                       <>
-                        {showClientList && (
-                          <div className="space-y-3 mb-6 max-h-40 overflow-y-auto">
-                            {clients.length > 0 ? (
-                              clients.map(client => (
-                                <div
-                                  key={client.id}
-                                  className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${selectedClient?.id === client.id ? 'bg-blue-500/20 border-blue-400' : 'bg-gray-800/10 border-gray-600'} border hover:border-gray-500`}
-                                  onClick={() => setSelectedClient(client)}
+                        {selectedClient ? (
+                          <div className="mb-6 p-4 bg-gray-800/20 rounded-lg border border-gray-600">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="text-white font-medium">{selectedClient.name}</p>
+                                {selectedClient.email && <p className="text-gray-300 text-sm">{selectedClient.email}</p>}
+                                {selectedClient.phone && <p className="text-gray-300 text-sm">{selectedClient.phone}</p>}
+                                {selectedClient.address && <p className="text-gray-300 text-sm">{selectedClient.address}</p>}
+                                {selectedClient.vat && <p className="text-gray-400 text-xs">VAT: {selectedClient.vat}</p>}
+                              </div>
+                              <div className="flex space-x-1">
+                                <button
+                                  className="p-1 hover:bg-blue-500/20 rounded transition-colors"
+                                  onClick={() => {
+                                    setClientFormData({
+                                      name: selectedClient.name,
+                                      email: selectedClient.email || '',
+                                      phone: selectedClient.phone || '',
+                                      vat: selectedClient.vat || '',
+                                      address: selectedClient.address || ''
+                                    });
+                                    setShowClientForm(true);
+                                  }}
                                 >
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <p className="text-white font-medium">{client.name}</p>
-                                      {client.email && <p className="text-gray-300 text-sm">{client.email}</p>}
-                                      {client.vat && <p className="text-gray-400 text-xs">VAT: {client.vat}</p>}
-                                    </div>
-                                    <div className="flex space-x-1">
-                                      <button
-                                        className="p-1 hover:bg-blue-500/20 rounded transition-colors"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setClientFormData({
-                                            name: client.name,
-                                            email: client.email || '',
-                                            phone: client.phone || '',
-                                            vat: client.vat || '',
-                                            address: client.address || ''
-                                          });
-                                          setSelectedClient(client);
-                                          setShowClientForm(true);
-                                        }}
-                                      >
-                                        <LucideSquarePen className="w-4 h-4 text-blue-400" />
-                                      </button>
-                                      <button
-                                        className="p-1 hover:bg-red-500/20 rounded transition-colors"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteClient(client.id);
-                                        }}
-                                      >
-                                        <LucideTrash2 className="w-4 h-4 text-red-400" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))
-                            ) : (
-                              <p className="text-gray-400 text-sm">No clients added yet.</p>
-                            )}
+                                  <LucideSquarePen className="w-4 h-4 text-blue-400" />
+                                </button>
+                                <button
+                                  className="p-1 hover:bg-red-500/20 rounded transition-colors"
+                                  onClick={() => handleDeleteClient(selectedClient.id)}
+                                >
+                                  <LucideTrash2 className="w-4 h-4 text-red-400" />
+                                </button>
+                              </div>
+                            </div>
                           </div>
+                        ) : (
+                          <p className="text-gray-400 text-sm mb-4">No client selected</p>
                         )}
                         <button
                           onClick={() => {
                             setClientFormData({ name: '', email: '', phone: '', vat: '', address: '' });
                             setShowClientForm(true);
-                            setShowClientList(true);
                           }}
-                          className="w-full mb-6 p-3 bg-blue-500/20 border border-blue-400 rounded-lg text-blue-400 font-medium hover:bg-blue-500/30 hover:border-blue-400 transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg shadow-blue-500/10"
+                          className="w-full p-3 bg-blue-500/20 border border-blue-400 rounded-lg text-blue-400 font-medium hover:bg-blue-500/30 hover:border-blue-400 transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg shadow-blue-500/10"
                         >
                           <LucidePlus className="w-4 h-4" />
-                          <span>Add New Client</span>
+                          <span>{selectedClient ? 'Change Client' : 'Add Client'}</span>
                         </button>
                       </>
                     )}

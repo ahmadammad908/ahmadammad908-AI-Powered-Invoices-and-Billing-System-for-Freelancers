@@ -33,9 +33,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   logo: {
-    height: "4rem", // Reduced from 64 to make it smaller
+    width:"64",
+    height:"64", // Reduced from 64 to make it smaller
     marginBottom: 16,
-    width: 30, // Maintain aspect ratio
+   
   },
   companyName: {
     fontSize: 18,
@@ -142,8 +143,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   rateCol: {
-    width: '15%',
+    width: '20%',
     textAlign: 'right',
+    
+
   },
   amountCol: {
     width: '20%',
@@ -259,7 +262,7 @@ export const InvoicePDF = ({ invoice }: InvoicePDFProps) => {
             {/* Company Info */}
             <View style={styles.companyInfo}>
               {invoice.company.logo && (
-                <Image src={invoice.company.logo} style={styles.logo}/>
+                <Image src={invoice.company.logo} style={styles.logo} />
               )}
               <Text style={styles.companyName}>{invoice.company.name || 'Your Company'}</Text>
               {invoice.company.email && (
