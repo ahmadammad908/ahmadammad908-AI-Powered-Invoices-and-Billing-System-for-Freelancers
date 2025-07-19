@@ -1,7 +1,6 @@
-
 "use client";
-import { useState, useRef, useEffect, JSX } from 'react';
-import { Formik, Form, Field, FieldArray, ErrorMessage } from 'formik';
+import { useState, useRef, useEffect } from 'react';
+import { Formik, Form, Field, FieldArray, ErrorMessage, FieldArrayRenderProps } from 'formik';
 import * as Yup from 'yup';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LucideSave, LucideUsers, LucidePlus, LucideShield, LucideInfo, LucideTrash2, LucideSquarePen, LucideBuilding2, LucideEye, LucideDownload, LucideShare2, LucideCalendar, LucideGlobe, LucideSearch, LucideFilter, LucideUpload, LucideChevronLeft, LucideChevronRight, LucideCheckCircle, LucideAlertCircle } from "lucide-react";
@@ -21,7 +20,6 @@ const InvoiceSchema = Yup.object().shape({
   items: Yup.array()
     .of(
       Yup.object().shape({
-        description: Yup.string().required('Description is required'),
         rate: Yup.number().min(0).required('Rate is required'),
         quantity: Yup.number().min(1).required('Quantity is required'),
       })
@@ -42,13 +40,16 @@ const getInitialValues = (): Invoice => ({
     id: '',
     name: '',
     email: '',
-    address: ''
+    address: '',
+    phone: '',
+    vat: ''
   },
   company: {
     id: '',
     name: '',
     email: '',
-    address: ''
+    address: '',
+    logo: null
   },
   items: [
     { id: '1', description: '', quantity: 1, rate: 0, total: 0 }
@@ -67,6 +68,12 @@ const currencyOptions = [
   { value: 'GBP', label: 'GBP - British Pound (£)', symbol: '£' },
   { value: 'PKR', label: 'PKR - Pakistani Rupee (₨)', symbol: '₨' },
 ];
+
+type ToastType = {
+  message: string;
+  type: 'success' | 'error';
+  visible: boolean;
+};
 
 export default function InvoiceForm() {
   // State
@@ -97,7 +104,7 @@ export default function InvoiceForm() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isCompanySaving, setIsCompanySaving] = useState(false);
   const [isClientSaving, setIsClientSaving] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; visible: boolean }>({
+  const [toast, setToast] = useState<ToastType>({
     message: '',
     type: 'success',
     visible: false
@@ -163,13 +170,16 @@ export default function InvoiceForm() {
         id: '',
         name: '',
         email: '',
-        address: ''
+        address: '',
+        phone: '',
+        vat: ''
       },
       company: selectedCompany || {
         id: '',
         name: '',
         email: '',
-        address: ''
+        address: '',
+        logo: null
       },
       ...calculateTotals([{ id: '1', description: '', quantity: 1, rate: 0, total: 0 }], 0)
     };
@@ -196,31 +206,53 @@ export default function InvoiceForm() {
     try {
       if (!navigator.share) {
         setToast({ message: 'Sharing not supported. Downloading instead.', type: 'error', visible: true });
-        handleDownloadPDF();
         return;
       }
 
-      const pdfBlob = await generatePdfBlob();
+      const currentInvoice = invoices[0] || {
+        ...getInitialValues(),
+        client: selectedClient || {
+          id: '',
+          name: '',
+          email: '',
+          address: '',
+          phone: '',
+          vat: ''
+        },
+        company: selectedCompany || {
+          id: '',
+          name: '',
+          email: '',
+          address: '',
+          logo: null
+        },
+        ...calculateTotals([{ id: '1', description: '', quantity: 1, rate: 0, total: 0 }], 0)
+      };
+
+      const pdfBlob = await generatePdfBlob(currentInvoice);
       await navigator.share({
-        title: `Invoice ${invoices[0]?.invoice_number || 'INV-0001'}`,
-        text: `Invoice from ${selectedCompany?.name || 'Your Company'}`,
-        files: [new File([pdfBlob], `invoice.pdf`, { type: 'application/pdf' })]
+        title: `Invoice ${currentInvoice.invoice_number}`,
+        text: `Invoice from ${currentInvoice.company.name}`,
+        files: [new File([pdfBlob], `invoice_${currentInvoice.invoice_number}.pdf`, { type: 'application/pdf' })]
       });
     } catch (error) {
       console.error("Sharing failed:", error);
       setToast({ message: 'Failed to share invoice.', type: 'error', visible: true });
-      handleDownloadPDF();
     }
   };
 
   // Helper function to generate PDF as Blob
-  const generatePdfBlob = async () => {
-    const { pdf } = await renderToStream(<InvoicePDF invoice={invoices[0]} />);
-    const chunks = [];
-    for await (const chunk of pdf) {
-      chunks.push(chunk);
-    }
-    return new Blob(chunks, { type: 'application/pdf' });
+  const generatePdfBlob = async (invoice: Invoice) => {
+    // In a real implementation, you would use a PDF generation library
+    // This is a placeholder - you'll need to implement actual PDF generation
+    const response = await fetch('/api/generate-pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ invoice }),
+    });
+    return await response.blob();
   };
 
   // Handle save invoice
@@ -572,7 +604,7 @@ export default function InvoiceForm() {
                             >
                               {companyFormData.logo ? (
                                 <div className="text-center">
-                                  <Image src={companyFormData.logo} alt="Company Logo" className="h-16 mx-auto mb-2 rounded" />
+                                  <Image src={companyFormData.logo} alt="Company Logo" width={64} height={64} className="h-16 mx-auto mb-2 rounded" />
                                   <p className="text-sm text-gray-300">Click to change logo</p>
                                 </div>
                               ) : (
@@ -983,10 +1015,16 @@ export default function InvoiceForm() {
                                   <div className="flex items-center justify-between mb-4">
                                     <h4 className="text-lg font-semibold text-white">Invoice Items</h4>
                                     <FieldArray name="items">
-                                      {({ push }) => (
+                                      {({ push }: FieldArrayRenderProps) => (
                                         <button
                                           type="button"
-                                          onClick={() => push({ id: Date.now().toString(), description: '', quantity: 1, rate: 0, total: 0 })}
+                                          onClick={() => push({
+                                            id: Date.now().toString(),
+                                            description: '',
+                                            quantity: 1,
+                                            rate: 0,
+                                            total: 0
+                                          })}
                                           className="p-2 bg-blue-500/20 border border-blue-400 rounded-lg text-blue-400 hover:bg-blue-500/30 hover:border-blue-400 transition-all duration-200 flex items-center space-x-2 shadow-lg shadow-blue-500/10"
                                         >
                                           <LucidePlus className="w-4 h-4" />
@@ -996,7 +1034,7 @@ export default function InvoiceForm() {
                                     </FieldArray>
                                   </div>
                                   <FieldArray name="items">
-                                    {({ remove}) => (
+                                    {({ remove }: FieldArrayRenderProps) => (
                                       <div className='space-y-3'>
                                         {values.items.map((item, index) => (
                                           <div key={item.id} className="p-4 bg-gray-800/10 rounded-lg border border-gray-600">
@@ -1048,7 +1086,7 @@ export default function InvoiceForm() {
                                               <div className="md:col-span-2">
                                                 <label className="block text-gray-300 text-sm font-medium mb-1">Total</label>
                                                 <div className="p-2 bg-gray-600/20 border border-gray-500 rounded text-gray-300">
-                                                  {getCurrencySymbol(values.currency)} {item.total.toFixed(2)}
+                                                  {getCurrencySymbol(values.currency)} {(values.items[index].quantity * values.items[index].rate).toFixed(2)}
                                                 </div>
                                               </div>
                                               <div className="md:col-span-1">
@@ -1132,7 +1170,7 @@ export default function InvoiceForm() {
                             <div className="flex flex-col sm:flex-row justify-between items-start mb-8 space-y-4 sm:space-y-0">
                               <div className="w-full sm:w-auto">
                                 {selectedCompany?.logo && (
-                                  <Image src={selectedCompany.logo} alt="Company Logo" className="h-16 mb-4" />
+                                  <Image src={selectedCompany.logo} alt="Company Logo" width={64} height={64} className="h-16 mb-4" />
                                 )}
                                 <h2 className="text-lg sm:text-xl font-semibold">{selectedCompany?.name || 'Your Company'}</h2>
                                 {selectedCompany?.email && <p className="text-gray-600 text-sm sm:text-base">{selectedCompany.email}</p>}
@@ -1180,8 +1218,8 @@ export default function InvoiceForm() {
                                     <tr key={item.id} className="border-b border-gray-100">
                                       <td className="py-3 text-gray-800 text-xs sm:text-sm">{item.description}</td>
                                       <td className="py-3 text-center text-gray-600 text-xs sm:text-sm">{item.quantity}</td>
-                                      <td className="py-3 text-right text-gray-600 text-xs sm:text-sm">{getCurrencySymbol(invoices[0]?.currency)} {item.rate.toFixed(2)}</td>
-                                      <td className="py-3 text-right text-gray-800 font-medium text-xs sm:text-sm">{getCurrencySymbol(invoices[0]?.currency)} {item.total.toFixed(2)}</td>
+                                      <td className="py-3 text-right text-gray-600 text-xs sm:text-sm">{getCurrencySymbol(invoices[0]?.currency || 'USD')} {item.rate.toFixed(2)}</td>
+                                      <td className="py-3 text-right text-gray-800 font-medium text-xs sm:text-sm">{getCurrencySymbol(invoices[0]?.currency || 'USD')} {(item.quantity * item.rate).toFixed(2)}</td>
                                     </tr>
                                   )) || (
                                       <tr>
@@ -1195,15 +1233,15 @@ export default function InvoiceForm() {
                               <div className="w-full sm:w-64">
                                 <div className="flex justify-between py-2 border-b border-gray-200">
                                   <span className="text-gray-600 text-sm sm:text-base">Subtotal:</span>
-                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(invoices[0]?.currency)} {invoices[0]?.subtotal?.toFixed(2) || '0.00'}</span>
+                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(invoices[0]?.currency || 'USD')} {invoices[0]?.subtotal?.toFixed(2) || '0.00'}</span>
                                 </div>
                                 <div className="flex justify-between py-2 border-b border-gray-200">
                                   <span className="text-gray-600 text-sm sm:text-base">Tax ({invoices[0]?.tax_rate || 0}%):</span>
-                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(invoices[0]?.currency)} {invoices[0]?.tax_amount?.toFixed(2) || '0.00'}</span>
+                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(invoices[0]?.currency || 'USD')} {invoices[0]?.tax_amount?.toFixed(2) || '0.00'}</span>
                                 </div>
                                 <div className="flex justify-between py-3 border-b-2 border-gray-800">
                                   <span className="text-base sm:text-lg font-semibold text-gray-800">Total:</span>
-                                  <span className="text-base sm:text-lg font-bold text-gray-800">{getCurrencySymbol(invoices[0]?.currency)} {invoices[0]?.total?.toFixed(2) || '0.00'}</span>
+                                  <span className="text-base sm:text-lg font-bold text-gray-800">{getCurrencySymbol(invoices[0]?.currency || 'USD')} {invoices[0]?.total?.toFixed(2) || '0.00'}</span>
                                 </div>
                               </div>
                             </div>
@@ -1339,9 +1377,4 @@ export default function InvoiceForm() {
       </div>
     </>
   );
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-function renderToStream(_arg0: JSX.Element): { pdf: any } | PromiseLike<{ pdf: any }> {
-  throw new Error('Function not implemented.');
 }
