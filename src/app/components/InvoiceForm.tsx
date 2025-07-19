@@ -20,6 +20,7 @@ const InvoiceSchema = Yup.object().shape({
   items: Yup.array()
     .of(
       Yup.object().shape({
+       
         rate: Yup.number().min(0).required('Rate is required'),
         quantity: Yup.number().min(1).required('Quantity is required'),
       })
@@ -109,6 +110,49 @@ export default function InvoiceForm() {
   });
   const invoicesPerPage = 5;
   const previewRef = useRef<HTMLDivElement>(null);
+
+  // Load saved data from localStorage on component mount
+  useEffect(() => {
+    const loadSavedData = () => {
+      try {
+        const savedCompany = localStorage.getItem('selectedCompany');
+        const savedClient = localStorage.getItem('selectedClient');
+        const savedInvoices = localStorage.getItem('invoices');
+        const savedFormData = localStorage.getItem('invoiceFormData');
+
+        if (savedCompany) {
+          setSelectedCompany(JSON.parse(savedCompany));
+        }
+        if (savedClient) {
+          setSelectedClient(JSON.parse(savedClient));
+        }
+        if (savedInvoices) {
+          setInvoices(JSON.parse(savedInvoices));
+        }
+      } catch (error) {
+        console.error('Error loading saved data:', error);
+      }
+    };
+
+    loadSavedData();
+  }, []);
+
+  // Save data to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedCompany) {
+      localStorage.setItem('selectedCompany', JSON.stringify(selectedCompany));
+    }
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedClient) {
+      localStorage.setItem('selectedClient', JSON.stringify(selectedClient));
+    }
+  }, [selectedClient]);
+
+  useEffect(() => {
+    localStorage.setItem('invoices', JSON.stringify(invoices));
+  }, [invoices]);
 
   // Toast auto-dismiss after 3 seconds
   useEffect(() => {
@@ -409,6 +453,7 @@ export default function InvoiceForm() {
       setCompanies(companies.filter(c => c.id !== companyId));
       if (selectedCompany?.id === companyId) {
         setSelectedCompany(null);
+        localStorage.removeItem('selectedCompany');
       }
       setToast({ message: 'Company deleted successfully.', type: 'success', visible: true });
     } catch (error) {
@@ -430,6 +475,7 @@ export default function InvoiceForm() {
       setClients(clients.filter(c => c.id !== clientId));
       if (selectedClient?.id === clientId) {
         setSelectedClient(null);
+        localStorage.removeItem('selectedClient');
       }
       setToast({ message: 'Client deleted successfully.', type: 'success', visible: true });
     } catch (error) {
@@ -462,7 +508,8 @@ export default function InvoiceForm() {
 
   // Handle invoice actions
   const handleDeleteInvoice = (id: string) => {
-    setInvoices(invoices.filter(invoice => invoice.id !== id));
+    const updatedInvoices = invoices.filter(invoice => invoice.id !== id);
+    setInvoices(updatedInvoices);
     setToast({ message: 'Invoice deleted successfully.', type: 'success', visible: true });
   };
 
@@ -488,6 +535,17 @@ export default function InvoiceForm() {
   const getCurrencySymbol = (currency: string) => {
     const option = currencyOptions.find(opt => opt.value === currency);
     return option?.symbol || '$';
+  };
+
+  // Clear all local storage data
+  const clearLocalData = () => {
+    localStorage.removeItem('selectedCompany');
+    localStorage.removeItem('selectedClient');
+    localStorage.removeItem('invoices');
+    setSelectedCompany(null);
+    setSelectedClient(null);
+    setInvoices([]);
+    setToast({ message: 'All local data cleared.', type: 'success', visible: true });
   };
 
   return (
@@ -521,7 +579,7 @@ export default function InvoiceForm() {
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl animate-pulse animation-delay-3000"></div>
         </div>
         <div className="relative z-10">
-          <header className="relative">
+        <header className="relative">
             <div className="absolute inset-0 bg-white/5 backdrop-blur-xl border-b border-white/10"></div>
             <div className="relative container mx-auto px-4 py-6">
               <div className="flex items-center justify-center">
@@ -536,8 +594,8 @@ export default function InvoiceForm() {
                     </svg>
                   </div>
                   <div>
-                    <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">ABCInvoice</h1>
-                    <p className="text-gray-400 text-sm">Generate Beautiful Invoices in Seconds for FREE</p>
+                    <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">AutoBillCraft</h1>
+                    <p className="text-gray-400 text-sm">Create stunning, professional invoices in just a few clicks</p>
                   </div>
                 </div>
               </div>
@@ -859,7 +917,7 @@ export default function InvoiceForm() {
                           <LucideInfo className="w-3 h-3 text-green-400/70" />
                         </div>
                         <p className="text-sm text-green-300/80 leading-relaxed">
-                          <strong>Your data is securely stored.</strong> All client and company information is stored securely in Supabase. Ensure your database is properly configured for access.
+                          <strong>Your data is securely stored.</strong> All client and company information is stored locally in your browser and securely in Supabase.
                         </p>
                       </div>
                     </div>
