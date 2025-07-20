@@ -4,7 +4,7 @@ import { Formik, Form, Field, FieldArray, ErrorMessage, FieldArrayRenderProps } 
 import * as Yup from 'yup';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LucideSave, LucideUsers, LucidePlus, LucideShield, LucideInfo, LucideTrash2, LucideSquarePen, LucideBuilding2, LucideEye, LucideDownload, LucideShare2, LucideCalendar, LucideGlobe, LucideSearch, LucideFilter, LucideUpload, LucideChevronLeft, LucideChevronRight, LucideCheckCircle, LucideAlertCircle } from "lucide-react";
-import { PDFDownloadLink } from '@react-pdf/renderer';
+import { PDFDownloadLink ,pdf} from '@react-pdf/renderer';
 import { InvoicePDF } from './InvoicePDF';
 import { Invoice, Client, CompanyDetails, InvoiceItem } from '../../../lib/types';
 import { supabase } from '../../../lib/database';
@@ -214,23 +214,10 @@ export default function InvoiceForm() {
 
   // Handle download as PDF
   const handleDownloadPDF = () => {
-    const currentInvoice = invoices.length > 0 ? invoices[0] : {
+    const currentInvoice = {
       ...formValues,
-      client: selectedClient || {
-        id: '',
-        name: '',
-        email: '',
-        address: '',
-        phone: '',
-        vat: ''
-      },
-      company: selectedCompany || {
-        id: '',
-        name: '',
-        email: '',
-        address: '',
-        logo: null
-      },
+      client: selectedClient || formValues.client,
+      company: selectedCompany || formValues.company,
       ...calculateTotals(formValues.items, formValues.tax_rate)
     };
 
@@ -255,70 +242,83 @@ export default function InvoiceForm() {
   const handleShare = async () => {
     try {
       if (!navigator.share) {
-        setToast({ message: 'Sharing not supported. Downloading instead.', type: 'error', visible: true });
+        setToast({ 
+          message: 'Web Share API not supported. Downloading instead.', 
+          type: 'error', 
+          visible: true 
+        });
+        // Trigger download
+        const link = document.createElement('a');
+        const pdfBlob = await pdf(<InvoicePDF invoice={getCurrentInvoice()} />).toBlob();
+        const url = URL.createObjectURL(pdfBlob);
+        link.href = url;
+        link.download = `invoice_${formValues.invoice_number}.pdf`;
+        link.click();
         return;
       }
 
-      const currentInvoice = invoices[0] || {
-        ...formValues,
-        client: selectedClient || {
-          id: '',
-          name: '',
-          email: '',
-          address: '',
-          phone: '',
-          vat: ''
-        },
-        company: selectedCompany || {
-          id: '',
-          name: '',
-          email: '',
-          address: '',
-          logo: null
-        },
-        ...calculateTotals(formValues.items, formValues.tax_rate)
-      };
+      const currentInvoice = getCurrentInvoice();
+      const pdfBlob = await pdf(<InvoicePDF invoice={currentInvoice} />).toBlob();
 
-      const pdfBlob = await generatePdfBlob(currentInvoice);
       await navigator.share({
         title: `Invoice ${currentInvoice.invoice_number}`,
-        text: `Invoice from ${currentInvoice.company.name}`,
-        files: [new File([pdfBlob], `invoice_${currentInvoice.invoice_number}.pdf`, { type: 'application/pdf' })]
+        text: `Invoice from ${currentInvoice.company.name} to ${currentInvoice.client.name}`,
+        files: [new File(
+          [pdfBlob], 
+          `invoice_${currentInvoice.invoice_number}.pdf`, 
+          { type: 'application/pdf' }
+        )]
       });
     } catch (error) {
       console.error("Sharing failed:", error);
-      setToast({ message: 'Failed to share invoice.', type: 'error', visible: true });
+      setToast({ 
+        message: 'Failed to share invoice. Try downloading instead.', 
+        type: 'error', 
+        visible: true 
+      });
+      
+      // Fallback to download
+      const link = document.createElement('a');
+      const pdfBlob = await pdf(<InvoicePDF invoice={getCurrentInvoice()} />).toBlob();
+      const url = URL.createObjectURL(pdfBlob);
+      link.href = url;
+      link.download = `invoice_${formValues.invoice_number}.pdf`;
+      link.click();
     }
-  };
+  };;
 
   // Helper function to generate PDF as Blob
-  const generatePdfBlob = async (invoice: Invoice) => {
-    const response = await fetch('/api/generate-pdf', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ invoice }),
-    });
-    return await response.blob();
-  };
+ 
 
   // Handle save invoice
   const handleSaveInvoice = () => {
-    if (!invoices.length) return;
+    if (!selectedCompany || !selectedClient) {
+      setToast({ message: 'Please select a company and client before saving the invoice.', type: 'error', visible: true });
+      return;
+    }
 
-    const updatedInvoices = [...invoices];
-    const existingIndex = updatedInvoices.findIndex(inv => inv.id === invoices[0].id);
+    const invoiceData: Invoice = {
+      ...formValues,
+      client: selectedClient,
+      company: selectedCompany,
+      ...calculateTotals(formValues.items, formValues.tax_rate)
+    };
 
-    if (existingIndex >= 0) {
-      updatedInvoices[existingIndex] = invoices[0];
+    const existingInvoiceIndex = invoices.findIndex(inv => inv.id === invoiceData.id);
+
+    let updatedInvoices: Invoice[];
+
+    if (existingInvoiceIndex >= 0) {
+      updatedInvoices = [...invoices];
+      updatedInvoices[existingInvoiceIndex] = invoiceData;
+      setToast({ message: 'Invoice updated successfully.', type: 'success', visible: true });
     } else {
-      updatedInvoices.unshift(invoices[0]);
+      updatedInvoices = [invoiceData, ...invoices];
+      setToast({ message: 'Invoice created successfully.', type: 'success', visible: true });
     }
 
     setInvoices(updatedInvoices);
     setActiveTab('history');
-    setToast({ message: 'Invoice saved successfully.', type: 'success', visible: true });
   };
 
   // Handle company form
@@ -517,7 +517,8 @@ export default function InvoiceForm() {
     }
 
     setInvoices(updatedInvoices);
-    saveFormValues(values);
+    setFormValues(invoiceData);
+    saveFormValues(invoiceData);
     setActiveTab('preview');
   };
 
@@ -552,6 +553,16 @@ export default function InvoiceForm() {
   const getCurrencySymbol = (currency: string) => {
     const option = currencyOptions.find(opt => opt.value === currency);
     return option?.symbol || '$';
+  };
+
+  // Get current invoice for preview
+  const getCurrentInvoice = () => {
+    return {
+      ...formValues,
+      client: selectedClient || formValues.client,
+      company: selectedCompany || formValues.company,
+      ...calculateTotals(formValues.items, formValues.tax_rate)
+    };
   };
 
   return (
@@ -1203,7 +1214,6 @@ export default function InvoiceForm() {
                             </button>
                             <button
                               onClick={handleShare}
-                              disabled={!invoices.length}
                               className="flex-none inline-flex items-center justify-center space-x-2 px-4 py-3 rounded-xl font-semibold transition-all duration-300 bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/50 hover:from-purple-500/30 hover:to-pink-500/30 hover:border-purple-400/70 text-purple-400 shadow-lg shadow-purple-500/20"
                             >
                               <LucideShare2 className="w-4 h-4" />
@@ -1222,15 +1232,15 @@ export default function InvoiceForm() {
                               </div>
                               <div className="text-left sm:text-right w-full sm:w-auto">
                                 <h1 className="text-xl sm:text-2xl font-bold text-gray-800">INVOICE</h1>
-                                <p className="text-gray-600 text-sm sm:text-base">#{invoices[0]?.invoice_number || formValues.invoice_number}</p>
+                                <p className="text-gray-600 text-sm sm:text-base">#{formValues.invoice_number}</p>
                                 <div className="mt-4 space-y-1">
                                   <div className="text-xs sm:text-sm">
                                     <span className="text-gray-600">Invoice Date: </span>
-                                    <span className="text-gray-800">{invoices[0]?.date || formValues.date}</span>
+                                    <span className="text-gray-800">{formValues.date}</span>
                                   </div>
                                   <div className="text-xs sm:text-sm">
                                     <span className="text-gray-600">Due Date: </span>
-                                    <span className="text-gray-800">{invoices[0]?.due_date || formValues.due_date}</span>
+                                    <span className="text-gray-800">{formValues.due_date}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1258,12 +1268,12 @@ export default function InvoiceForm() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {(invoices[0]?.items || formValues.items)?.map((item) => (
+                                  {formValues.items?.map((item) => (
                                     <tr key={item.id} className="border-b border-gray-100">
                                       <td className="py-3 text-gray-800 text-xs sm:text-sm">{item.description}</td>
                                       <td className="py-3 text-center text-gray-600 text-xs sm:text-sm">{item.quantity}</td>
-                                      <td className="py-3 text-right text-gray-600 text-xs sm:text-sm">{getCurrencySymbol(invoices[0]?.currency || formValues.currency)} {item.rate.toFixed(2)}</td>
-                                      <td className="py-3 text-right text-gray-800 font-medium text-xs sm:text-sm">{getCurrencySymbol(invoices[0]?.currency || formValues.currency)} {(item.quantity * item.rate).toFixed(2)}</td>
+                                      <td className="py-3 text-right text-gray-600 text-xs sm:text-sm">{getCurrencySymbol(formValues.currency)} {item.rate.toFixed(2)}</td>
+                                      <td className="py-3 text-right text-gray-800 font-medium text-xs sm:text-sm">{getCurrencySymbol(formValues.currency)} {(item.quantity * item.rate).toFixed(2)}</td>
                                     </tr>
                                   )) || (
                                       <tr>
@@ -1277,22 +1287,22 @@ export default function InvoiceForm() {
                               <div className="w-full sm:w-64">
                                 <div className="flex justify-between py-2 border-b border-gray-200">
                                   <span className="text-gray-600 text-sm sm:text-base">Subtotal:</span>
-                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(invoices[0]?.currency || formValues.currency)} {(invoices[0]?.subtotal || calculateTotals(formValues.items, formValues.tax_rate).subtotal).toFixed(2)}</span>
+                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(formValues.currency)} {calculateTotals(formValues.items, formValues.tax_rate).subtotal.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between py-2 border-b border-gray-200">
-                                  <span className="text-gray-600 text-sm sm:text-base">Tax ({invoices[0]?.tax_rate || formValues.tax_rate}%):</span>
-                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(invoices[0]?.currency || formValues.currency)} {(invoices[0]?.tax_amount || calculateTotals(formValues.items, formValues.tax_rate).tax_amount).toFixed(2)}</span>
+                                  <span className="text-gray-600 text-sm sm:text-base">Tax ({formValues.tax_rate}%):</span>
+                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(formValues.currency)} {calculateTotals(formValues.items, formValues.tax_rate).tax_amount.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between py-3 border-b-2 border-gray-800">
                                   <span className="text-base sm:text-lg font-semibold text-gray-800">Total:</span>
-                                  <span className="text-base sm:text-lg font-bold text-gray-800">{getCurrencySymbol(invoices[0]?.currency || formValues.currency)} {(invoices[0]?.total || calculateTotals(formValues.items, formValues.tax_rate).total).toFixed(2)}</span>
+                                  <span className="text-base sm:text-lg font-bold text-gray-800">{getCurrencySymbol(formValues.currency)} {calculateTotals(formValues.items, formValues.tax_rate).total.toFixed(2)}</span>
                                 </div>
                               </div>
                             </div>
-                            {(invoices[0]?.notes || formValues.notes) && (
+                            {formValues.notes && (
                               <div className="mb-8">
                                 <h3 className="font-semibold text-gray-800 mb-2 text-sm sm:text-base">Notes:</h3>
-                                <p className="text-gray-600 text-sm sm:text-base">{invoices[0]?.notes || formValues.notes}</p>
+                                <p className="text-gray-600 text-sm sm:text-base">{formValues.notes}</p>
                               </div>
                             )}
                             <div className="mt-12 pt-8 border-t border-gray-200 text-center text-gray-500 text-xs sm:text-sm">
