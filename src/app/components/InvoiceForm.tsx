@@ -21,7 +21,6 @@ const InvoiceSchema = Yup.object().shape({
     .of(
       Yup.object().shape({
         rate: Yup.number().min(0).required('Rate is required'),
-        quantity: Yup.number().min(1).required('Quantity is required'),
       })
     )
     .min(1, 'At least one item is required'),
