@@ -157,12 +157,6 @@ export default function InvoiceForm() {
     localStorage.setItem('invoices', JSON.stringify(invoices));
   }, [invoices]);
 
-  // Save form values to localStorage when they change
-  const saveFormValues = (values: Invoice) => {
-    setFormValues(values);
-    localStorage.setItem('invoiceFormData', JSON.stringify(values));
-  };
-
   // Toast auto-dismiss after 3 seconds
   useEffect(() => {
     if (toast.visible) {
@@ -211,6 +205,12 @@ export default function InvoiceForm() {
     const tax_amount = subtotal * (taxRate / 100);
     const total = subtotal + tax_amount;
     return { subtotal, tax_amount, total };
+  };
+
+  // Handle form values persistence
+  const saveFormValues = (values: Invoice) => {
+    setFormValues(values);
+    localStorage.setItem('invoiceFormData', JSON.stringify(values));
   };
 
   // Handle download as PDF
@@ -294,8 +294,6 @@ export default function InvoiceForm() {
 
   // Helper function to generate PDF as Blob
   const generatePdfBlob = async (invoice: Invoice) => {
-    // In a real implementation, you would use a PDF generation library
-    // This is a placeholder - you'll need to implement actual PDF generation
     const response = await fetch('/api/generate-pdf', {
       method: 'POST',
       headers: {
@@ -354,7 +352,6 @@ export default function InvoiceForm() {
 
     try {
       if (selectedCompany) {
-        // Update existing company
         const { error } = await supabase
           .from('companies')
           .update({
@@ -369,7 +366,6 @@ export default function InvoiceForm() {
 
         setCompanies(companies.map(c => c.id === companyData.id ? companyData : c));
       } else {
-        // Insert new company
         const { error } = await supabase
           .from('companies')
           .insert([companyData]);
@@ -411,7 +407,6 @@ export default function InvoiceForm() {
 
     try {
       if (selectedClient) {
-        // Update existing client
         const { error } = await supabase
           .from('clients')
           .update({
@@ -427,7 +422,6 @@ export default function InvoiceForm() {
 
         setClients(clients.map(c => c.id === clientData.id ? clientData : c));
       } else {
-        // Insert new client
         const { error } = await supabase
           .from('clients')
           .insert([clientData]);
@@ -502,26 +496,23 @@ export default function InvoiceForm() {
 
     const invoiceData: Invoice = {
       ...values,
-      id: values.id || Date.now().toString(), // Keep existing ID or create new one
+      id: values.id || Date.now().toString(),
       client: selectedClient,
       company: selectedCompany,
-      status: values.status || 'draft', // Preserve existing status
-      created_at: values.created_at || new Date().toISOString(), // Preserve original creation date
+      status: values.status || 'draft',
+      created_at: values.created_at || new Date().toISOString(),
       ...calculateTotals(values.items, values.tax_rate)
     };
 
-    // Check if this is an existing invoice (has an ID that matches one in the array)
     const existingInvoiceIndex = invoices.findIndex(inv => inv.id === invoiceData.id);
 
     let updatedInvoices: Invoice[];
 
     if (existingInvoiceIndex >= 0) {
-      // Update existing invoice
       updatedInvoices = [...invoices];
       updatedInvoices[existingInvoiceIndex] = invoiceData;
       setToast({ message: 'Invoice updated successfully.', type: 'success', visible: true });
     } else {
-      // Add new invoice
       updatedInvoices = [invoiceData, ...invoices];
       setToast({ message: 'Invoice created successfully.', type: 'success', visible: true });
     }
@@ -564,19 +555,6 @@ export default function InvoiceForm() {
     return option?.symbol || '$';
   };
 
-  // Clear all local storage data
-  // const clearLocalData = () => {
-  //   localStorage.removeItem('selectedCompany');
-  //   localStorage.removeItem('selectedClient');
-  //   localStorage.removeItem('invoices');
-  //   localStorage.removeItem('invoiceFormData');
-  //   setSelectedCompany(null);
-  //   setSelectedClient(null);
-  //   setInvoices([]);
-  //   setFormValues(getInitialValues());
-  //   setToast({ message: 'All local data cleared.', type: 'success', visible: true });
-  // };
-
   return (
     <>
       {/* Toast Notification */}
@@ -586,8 +564,7 @@ export default function InvoiceForm() {
             initial={{ opacity: 0, y: -50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -50 }}
-            className={`fixed top-4 right-4 p-4 rounded-lg shadow-lg flex items-center space-x-2 z-50 ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-              }`}
+            className={`fixed top-4 right-4 p-4 rounded-lg shadow-lg flex items-center space-x-2 z-50 ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}
           >
             {toast.type === 'success' ? (
               <LucideCheckCircle className="w-5 h-5" />
@@ -1009,215 +986,206 @@ export default function InvoiceForm() {
                           validationSchema={InvoiceSchema}
                           onSubmit={handleSubmitInvoice}
                         >
-                          {({ values, setFieldValue }) => {
-                            const { subtotal, tax_amount, total } = calculateTotals(values.items, values.tax_rate);
-
-                            // Save form values to localStorage whenever they change
-                            useEffect(() => {
-                              saveFormValues(values);
-                            }, [values]);
-
-                            return (
-                              <Form className="space-y-6">
-                                <h3 className="text-2xl font-semibold text-white mb-6">Invoice Details</h3>
-                                <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
-                                  <div>
-                                    <label className="block text-gray-300 text-sm font-medium mb-2">Invoice Number</label>
-                                    <Field
-                                      type="text"
-                                      name="invoice_number"
-                                      className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
-                                    />
-                                    <ErrorMessage name="invoice_number" component="div" className="text-red-400 text-sm mt-1" />
-                                  </div>
-                                  <div>
-                                    <label className="block text-gray-300 text-sm font-medium mb-2">Date</label>
-                                    <div className="relative">
-                                      <Field
-                                        type="date"
-                                        name="date"
-                                        className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
-                                      />
-                                      <LucideCalendar className="absolute right-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" />
-                                    </div>
-                                    <ErrorMessage name="date" component="div" className="text-red-400 text-sm mt-1" />
-                                  </div>
-                                  <div>
-                                    <label className="block text-gray-300 text-sm font-medium mb-2">Due Date</label>
-                                    <div className="relative">
-                                      <Field
-                                        type="date"
-                                        name="due_date"
-                                        className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
-                                      />
-                                      <LucideCalendar className="absolute right-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" />
-                                    </div>
-                                    <ErrorMessage name="due_date" component="div" className="text-red-400 text-sm mt-1" />
-                                  </div>
-                                </div>
-                                <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-                                  <div>
-                                    <label className="block text-gray-300 text-sm font-medium mb-2">Currency</label>
-                                    <div className="relative">
-                                      <Field
-                                        as="select"
-                                        name="currency"
-                                        className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200 appearance-none cursor-pointer"
-                                      >
-                                        {currencyOptions.map(option => (
-                                          <option key={option.value} value={option.value} className="bg-gray-800 text-white">
-                                            {option.label}
-                                          </option>
-                                        ))}
-                                      </Field>
-                                      <LucideGlobe className="absolute right-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" />
-                                    </div>
-                                    <ErrorMessage name="currency" component="div" className="text-red-400 text-sm mt-1" />
-                                  </div>
-                                  <div>
-                                    <label className="block text-gray-300 text-sm font-medium mb-2">Tax Rate (%)</label>
-                                    <Field
-                                      type="number"
-                                      name="tax_rate"
-                                      className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
-                                      placeholder="0"
-                                      min="0"
-                                      max="100"
-                                      step="0.01"
-                                    />
-                                    <ErrorMessage name="tax_rate" component="div" className="text-red-400 text-sm mt-1" />
-                                  </div>
+                          {({ values, setFieldValue }) => (
+                            <Form className="space-y-6">
+                              <h3 className="text-2xl font-semibold text-white mb-6">Invoice Details</h3>
+                              <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
+                                <div>
+                                  <label className="block text-gray-300 text-sm font-medium mb-2">Invoice Number</label>
+                                  <Field
+                                    type="text"
+                                    name="invoice_number"
+                                    className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
+                                  />
+                                  <ErrorMessage name="invoice_number" component="div" className="text-red-400 text-sm mt-1" />
                                 </div>
                                 <div>
-                                  <div className="flex items-center justify-between mb-4">
-                                    <h4 className="text-lg font-semibold text-white">Invoice Items</h4>
-                                    <FieldArray name="items">
-                                      {({ push }: FieldArrayRenderProps) => (
-                                        <button
-                                          type="button"
-                                          onClick={() => push({
-                                            id: Date.now().toString(),
-                                            description: '',
-                                            quantity: 1,
-                                            rate: 0,
-                                            total: 0
-                                          })}
-                                          className="p-2 bg-blue-500/20 border border-blue-400 rounded-lg text-blue-400 hover:bg-blue-500/30 hover:border-blue-400 transition-all duration-200 flex items-center space-x-2 shadow-lg shadow-blue-500/10"
-                                        >
-                                          <LucidePlus className="w-4 h-4" />
-                                          <span className="hidden sm:inline">Add Item</span>
-                                        </button>
-                                      )}
-                                    </FieldArray>
+                                  <label className="block text-gray-300 text-sm font-medium mb-2">Date</label>
+                                  <div className="relative">
+                                    <Field
+                                      type="date"
+                                      name="date"
+                                      className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
+                                    />
+                                    <LucideCalendar className="absolute right-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" />
                                   </div>
+                                  <ErrorMessage name="date" component="div" className="text-red-400 text-sm mt-1" />
+                                </div>
+                                <div>
+                                  <label className="block text-gray-300 text-sm font-medium mb-2">Due Date</label>
+                                  <div className="relative">
+                                    <Field
+                                      type="date"
+                                      name="due_date"
+                                      className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
+                                    />
+                                    <LucideCalendar className="absolute right-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" />
+                                  </div>
+                                  <ErrorMessage name="due_date" component="div" className="text-red-400 text-sm mt-1" />
+                                </div>
+                              </div>
+                              <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+                                <div>
+                                  <label className="block text-gray-300 text-sm font-medium mb-2">Currency</label>
+                                  <div className="relative">
+                                    <Field
+                                      as="select"
+                                      name="currency"
+                                      className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200 appearance-none cursor-pointer"
+                                    >
+                                      {currencyOptions.map(option => (
+                                        <option key={option.value} value={option.value} className="bg-gray-800 text-white">
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </Field>
+                                    <LucideGlobe className="absolute right-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" />
+                                  </div>
+                                  <ErrorMessage name="currency" component="div" className="text-red-400 text-sm mt-1" />
+                                </div>
+                                <div>
+                                  <label className="block text-gray-300 text-sm font-medium mb-2">Tax Rate (%)</label>
+                                  <Field
+                                    type="number"
+                                    name="tax_rate"
+                                    className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
+                                    placeholder="0"
+                                    min="0"
+                                    max="100"
+                                    step="0.01"
+                                  />
+                                  <ErrorMessage name="tax_rate" component="div" className="text-red-400 text-sm mt-1" />
+                                </div>
+                              </div>
+                              <div>
+                                <div className="flex items-center justify-between mb-4">
+                                  <h4 className="text-lg font-semibold text-white">Invoice Items</h4>
                                   <FieldArray name="items">
-                                    {({ remove }: FieldArrayRenderProps) => (
-                                      <div className='space-y-3'>
-                                        {values.items.map((item, index) => (
-                                          <div key={item.id} className="p-4 bg-gray-800/10 rounded-lg border border-gray-600">
-                                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                                              <div className="md:col-span-5">
-                                                <label className="block text-gray-300 text-sm font-medium mb-1">Description</label>
-                                                <Field
-                                                  type="text"
-                                                  name={`items.${index}.description`}
-                                                  className="w-full p-2 bg-gray-800/20 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
-                                                  placeholder="Item description"
-                                                />
-                                                <ErrorMessage name={`items.${index}.description`} component="div" className="text-red-400 text-sm mt-1" />
-                                              </div>
-                                              <div className="md:col-span-2">
-                                                <label className="block text-gray-300 text-sm font-medium mb-1">Quantity</label>
-                                                <Field
-                                                  type="number"
-                                                  name={`items.${index}.quantity`}
-                                                  className="w-full p-2 bg-gray-800/20 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
-                                                  min="1"
-                                                  step="1"
-                                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                                    const quantity = parseInt(e.target.value) || 0;
-                                                    const rate = values.items[index].rate || 0;
-                                                    setFieldValue(`items.${index}.quantity`, quantity);
-                                                    setFieldValue(`items.${index}.total`, quantity * rate);
-                                                  }}
-                                                />
-                                                <ErrorMessage name={`items.${index}.quantity`} component="div" className="text-red-400 text-sm mt-1" />
-                                              </div>
-                                              <div className="md:col-span-2">
-                                                <label className="block text-gray-300 text-sm font-medium mb-1">Rate</label>
-                                                <Field
-                                                  type="number"
-                                                  name={`items.${index}.rate`}
-                                                  className="w-full p-2 bg-gray-800/20 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
-                                                  min="0"
-                                                  step="0.01"
-                                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                                    const rate = parseFloat(e.target.value) || 0;
-                                                    const quantity = values.items[index].quantity || 0;
-                                                    setFieldValue(`items.${index}.rate`, rate);
-                                                    setFieldValue(`items.${index}.total`, quantity * rate);
-                                                  }}
-                                                />
-                                                <ErrorMessage name={`items.${index}.rate`} component="div" className="text-red-400 text-sm mt-1" />
-                                              </div>
-                                              <div className="md:col-span-2">
-                                                <label className="block text-gray-300 text-sm font-medium mb-1">Total</label>
-                                                <div className="p-2 bg-gray-600/20 border border-gray-500 rounded text-gray-300">
-                                                  {getCurrencySymbol(values.currency)} {(values.items[index].quantity * values.items[index].rate).toFixed(2)}
-                                                </div>
-                                              </div>
-                                              <div className="md:col-span-1">
-                                                <button
-                                                  type="button"
-                                                  onClick={() => remove(index)}
-                                                  className="p-2 bg-red-500/20 border border-red-400 rounded text-red-400 hover:bg-red-500/30 hover:border-red-400 transition-all duration-200 shadow-lg shadow-red-500/10"
-                                                >
-                                                  <LucideTrash2 className="w-4 h-4" />
-                                                </button>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
+                                    {({ push }: FieldArrayRenderProps) => (
+                                      <button
+                                        type="button"
+                                        onClick={() => push({
+                                          id: Date.now().toString(),
+                                          description: '',
+                                          quantity: 1,
+                                          rate: 0,
+                                          total: 0
+                                        })}
+                                        className="p-2 bg-blue-500/20 border border-blue-400 rounded-lg text-blue-400 hover:bg-blue-500/30 hover:border-blue-400 transition-all duration-200 flex items-center space-x-2 shadow-lg shadow-blue-500/10"
+                                      >
+                                        <LucidePlus className="w-4 h-4" />
+                                        <span className="hidden sm:inline">Add Item</span>
+                                      </button>
                                     )}
                                   </FieldArray>
-                                  <ErrorMessage name="items" component="div" className="text-red-400 text-sm mt-1" />
                                 </div>
-                                <div>
-                                  <label className="block text-gray-300 text-sm font-medium mb-2">Notes</label>
-                                  <Field
-                                    as="textarea"
-                                    name="notes"
-                                    rows={3}
-                                    className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200 resize-none"
-                                    placeholder="Additional notes or payment terms"
-                                  />
-                                </div>
-                                <div className="flex flex-col sm:flex-row justify-between items-center pt-6 border-t border-gray-600 gap-4">
-                                  <div className="text-gray-300 w-full sm:w-auto">
-                                    <div className="flex justify-between">
-                                      <span>Subtotal:</span>
-                                      <span className="ml-4">{getCurrencySymbol(values.currency)} {subtotal.toFixed(2)}</span>
+                                <FieldArray name="items">
+                                  {({ remove }: FieldArrayRenderProps) => (
+                                    <div className='space-y-3'>
+                                      {values.items.map((item, index) => (
+                                        <div key={item.id} className="p-4 bg-gray-800/10 rounded-lg border border-gray-600">
+                                          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                                            <div className="md:col-span-5">
+                                              <label className="block text-gray-300 text-sm font-medium mb-1">Description</label>
+                                              <Field
+                                                type="text"
+                                                name={`items.${index}.description`}
+                                                className="w-full p-2 bg-gray-800/20 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
+                                                placeholder="Item description"
+                                              />
+                                              <ErrorMessage name={`items.${index}.description`} component="div" className="text-red-400 text-sm mt-1" />
+                                            </div>
+                                            <div className="md:col-span-2">
+                                              <label className="block text-gray-300 text-sm font-medium mb-1">Quantity</label>
+                                              <Field
+                                                type="number"
+                                                name={`items.${index}.quantity`}
+                                                className="w-full p-2 bg-gray-800/20 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
+                                                min="1"
+                                                step="1"
+                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                                  const quantity = parseInt(e.target.value) || 0;
+                                                  const rate = values.items[index].rate || 0;
+                                                  setFieldValue(`items.${index}.quantity`, quantity);
+                                                  setFieldValue(`items.${index}.total`, quantity * rate);
+                                                }}
+                                              />
+                                              <ErrorMessage name={`items.${index}.quantity`} component="div" className="text-red-400 text-sm mt-1" />
+                                            </div>
+                                            <div className="md:col-span-2">
+                                              <label className="block text-gray-300 text-sm font-medium mb-1">Rate</label>
+                                              <Field
+                                                type="number"
+                                                name={`items.${index}.rate`}
+                                                className="w-full p-2 bg-gray-800/20 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200"
+                                                min="0"
+                                                step="0.01"
+                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                                  const rate = parseFloat(e.target.value) || 0;
+                                                  const quantity = values.items[index].quantity || 0;
+                                                  setFieldValue(`items.${index}.rate`, rate);
+                                                  setFieldValue(`items.${index}.total`, quantity * rate);
+                                                }}
+                                              />
+                                              <ErrorMessage name={`items.${index}.rate`} component="div" className="text-red-400 text-sm mt-1" />
+                                            </div>
+                                            <div className="md:col-span-2">
+                                              <label className="block text-gray-300 text-sm font-medium mb-1">Total</label>
+                                              <div className="p-2 bg-gray-600/20 border border-gray-500 rounded text-gray-300">
+                                                {getCurrencySymbol(values.currency)} {(values.items[index].quantity * values.items[index].rate).toFixed(2)}
+                                              </div>
+                                            </div>
+                                            <div className="md:col-span-1">
+                                              <button
+                                                type="button"
+                                                onClick={() => remove(index)}
+                                                className="p-2 bg-red-500/20 border border-red-400 rounded text-red-400 hover:bg-red-500/30 hover:border-red-400 transition-all duration-200 shadow-lg shadow-red-500/10"
+                                              >
+                                                <LucideTrash2 className="w-4 h-4" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
                                     </div>
-                                    <div className="flex justify-between">
-                                      <span>Tax ({values.tax_rate}%):</span>
-                                      <span className="ml-4">{getCurrencySymbol(values.currency)} {tax_amount.toFixed(2)}</span>
-                                    </div>
-                                    <div className="flex justify-between font-bold text-lg mt-2">
-                                      <span>Total:</span>
-                                      <span className="ml-4">{getCurrencySymbol(values.currency)} {total.toFixed(2)}</span>
-                                    </div>
+                                  )}
+                                </FieldArray>
+                                <ErrorMessage name="items" component="div" className="text-red-400 text-sm mt-1" />
+                              </div>
+                              <div>
+                                <label className="block text-gray-300 text-sm font-medium mb-2">Notes</label>
+                                <Field
+                                  as="textarea"
+                                  name="notes"
+                                  rows={3}
+                                  className="w-full p-3 bg-gray-800/20 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-gray-800/30 transition-all duration-200 resize-none"
+                                  placeholder="Additional notes or payment terms"
+                                />
+                              </div>
+                              <div className="flex flex-col sm:flex-row justify-between items-center pt-6 border-t border-gray-600 gap-4">
+                                <div className="text-gray-300 w-full sm:w-auto">
+                                  <div className="flex justify-between">
+                                    <span>Subtotal:</span>
+                                    <span className="ml-4">{getCurrencySymbol(values.currency)} {calculateTotals(values.items, values.tax_rate).subtotal.toFixed(2)}</span>
                                   </div>
-                                  <button
-                                    type="submit"
-                                    className="w-full sm:w-auto px-6 py-3 bg-blue-500/20 border border-blue-400 rounded-lg text-blue-400 font-medium hover:bg-blue-500/30 hover:border-blue-400 transition-all duration-200 shadow-lg shadow-blue-500/10"
-                                  >
-                                    Save Invoice
-                                  </button>
+                                  <div className="flex justify-between">
+                                    <span>Tax ({values.tax_rate}%):</span>
+                                    <span className="ml-4">{getCurrencySymbol(values.currency)} {calculateTotals(values.items, values.tax_rate).tax_amount.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex justify-between font-bold text-lg mt-2">
+                                    <span>Total:</span>
+                                    <span className="ml-4">{getCurrencySymbol(values.currency)} {calculateTotals(values.items, values.tax_rate).total.toFixed(2)}</span>
+                                  </div>
                                 </div>
-                              </Form>
-                            );
-                          }}
+                                <button
+                                  type="submit"
+                                  className="w-full sm:w-auto px-6 py-3 bg-blue-500/20 border border-blue-400 rounded-lg text-blue-400 font-medium hover:bg-blue-500/30 hover:border-blue-400 transition-all duration-200 shadow-lg shadow-blue-500/10"
+                                >
+                                  Save Invoice
+                                </button>
+                              </div>
+                            </Form>
+                          )}
                         </Formik>
                       )}
                       {/* Preview Tab */}
