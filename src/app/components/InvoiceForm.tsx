@@ -20,7 +20,6 @@ const InvoiceSchema = Yup.object().shape({
   items: Yup.array()
     .of(
       Yup.object().shape({
-       
         rate: Yup.number().min(0).required('Rate is required'),
         quantity: Yup.number().min(1).required('Quantity is required'),
       })
@@ -108,6 +107,7 @@ export default function InvoiceForm() {
     type: 'success',
     visible: false
   });
+  const [formValues, setFormValues] = useState<Invoice>(getInitialValues());
   const invoicesPerPage = 5;
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -128,6 +128,9 @@ export default function InvoiceForm() {
         }
         if (savedInvoices) {
           setInvoices(JSON.parse(savedInvoices));
+        }
+        if (savedFormData) {
+          setFormValues(JSON.parse(savedFormData));
         }
       } catch (error) {
         console.error('Error loading saved data:', error);
@@ -153,6 +156,12 @@ export default function InvoiceForm() {
   useEffect(() => {
     localStorage.setItem('invoices', JSON.stringify(invoices));
   }, [invoices]);
+
+  // Save form values to localStorage when they change
+  const saveFormValues = (values: Invoice) => {
+    setFormValues(values);
+    localStorage.setItem('invoiceFormData', JSON.stringify(values));
+  };
 
   // Toast auto-dismiss after 3 seconds
   useEffect(() => {
@@ -207,7 +216,7 @@ export default function InvoiceForm() {
   // Handle download as PDF
   const handleDownloadPDF = () => {
     const currentInvoice = invoices.length > 0 ? invoices[0] : {
-      ...getInitialValues(),
+      ...formValues,
       client: selectedClient || {
         id: '',
         name: '',
@@ -223,7 +232,7 @@ export default function InvoiceForm() {
         address: '',
         logo: null
       },
-      ...calculateTotals([{ id: '1', description: '', quantity: 1, rate: 0, total: 0 }], 0)
+      ...calculateTotals(formValues.items, formValues.tax_rate)
     };
 
     return (
@@ -252,7 +261,7 @@ export default function InvoiceForm() {
       }
 
       const currentInvoice = invoices[0] || {
-        ...getInitialValues(),
+        ...formValues,
         client: selectedClient || {
           id: '',
           name: '',
@@ -268,7 +277,7 @@ export default function InvoiceForm() {
           address: '',
           logo: null
         },
-        ...calculateTotals([{ id: '1', description: '', quantity: 1, rate: 0, total: 0 }], 0)
+        ...calculateTotals(formValues.items, formValues.tax_rate)
       };
 
       const pdfBlob = await generatePdfBlob(currentInvoice);
@@ -493,17 +502,33 @@ export default function InvoiceForm() {
 
     const invoiceData: Invoice = {
       ...values,
-      id: values.id || Date.now().toString(),
+      id: values.id || Date.now().toString(), // Keep existing ID or create new one
       client: selectedClient,
       company: selectedCompany,
-      status: 'draft',
-      created_at: new Date().toISOString(),
+      status: values.status || 'draft', // Preserve existing status
+      created_at: values.created_at || new Date().toISOString(), // Preserve original creation date
       ...calculateTotals(values.items, values.tax_rate)
     };
 
-    setInvoices([invoiceData, ...invoices]);
+    // Check if this is an existing invoice (has an ID that matches one in the array)
+    const existingInvoiceIndex = invoices.findIndex(inv => inv.id === invoiceData.id);
+
+    let updatedInvoices: Invoice[];
+
+    if (existingInvoiceIndex >= 0) {
+      // Update existing invoice
+      updatedInvoices = [...invoices];
+      updatedInvoices[existingInvoiceIndex] = invoiceData;
+      setToast({ message: 'Invoice updated successfully.', type: 'success', visible: true });
+    } else {
+      // Add new invoice
+      updatedInvoices = [invoiceData, ...invoices];
+      setToast({ message: 'Invoice created successfully.', type: 'success', visible: true });
+    }
+
+    setInvoices(updatedInvoices);
+    saveFormValues(values);
     setActiveTab('preview');
-    setToast({ message: 'Invoice created successfully.', type: 'success', visible: true });
   };
 
   // Handle invoice actions
@@ -516,6 +541,8 @@ export default function InvoiceForm() {
   const handleEditInvoice = (invoice: Invoice) => {
     setSelectedClient(invoice.client);
     setSelectedCompany(invoice.company);
+    setFormValues(invoice);
+    saveFormValues(invoice);
     setActiveTab('details');
   };
 
@@ -538,15 +565,17 @@ export default function InvoiceForm() {
   };
 
   // Clear all local storage data
-  const clearLocalData = () => {
-    localStorage.removeItem('selectedCompany');
-    localStorage.removeItem('selectedClient');
-    localStorage.removeItem('invoices');
-    setSelectedCompany(null);
-    setSelectedClient(null);
-    setInvoices([]);
-    setToast({ message: 'All local data cleared.', type: 'success', visible: true });
-  };
+  // const clearLocalData = () => {
+  //   localStorage.removeItem('selectedCompany');
+  //   localStorage.removeItem('selectedClient');
+  //   localStorage.removeItem('invoices');
+  //   localStorage.removeItem('invoiceFormData');
+  //   setSelectedCompany(null);
+  //   setSelectedClient(null);
+  //   setInvoices([]);
+  //   setFormValues(getInitialValues());
+  //   setToast({ message: 'All local data cleared.', type: 'success', visible: true });
+  // };
 
   return (
     <>
@@ -579,7 +608,7 @@ export default function InvoiceForm() {
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl animate-pulse animation-delay-3000"></div>
         </div>
         <div className="relative z-10">
-        <header className="relative">
+          <header className="relative">
             <div className="absolute inset-0 bg-white/5 backdrop-blur-xl border-b border-white/10"></div>
             <div className="relative container mx-auto px-4 py-6">
               <div className="flex items-center justify-center">
@@ -976,12 +1005,17 @@ export default function InvoiceForm() {
                       {/* Invoice Details Tab */}
                       {activeTab === 'details' && (
                         <Formik
-                          initialValues={getInitialValues()}
+                          initialValues={formValues}
                           validationSchema={InvoiceSchema}
                           onSubmit={handleSubmitInvoice}
                         >
                           {({ values, setFieldValue }) => {
                             const { subtotal, tax_amount, total } = calculateTotals(values.items, values.tax_rate);
+
+                            // Save form values to localStorage whenever they change
+                            useEffect(() => {
+                              saveFormValues(values);
+                            }, [values]);
 
                             return (
                               <Form className="space-y-6">
@@ -1221,15 +1255,15 @@ export default function InvoiceForm() {
                               </div>
                               <div className="text-left sm:text-right w-full sm:w-auto">
                                 <h1 className="text-xl sm:text-2xl font-bold text-gray-800">INVOICE</h1>
-                                <p className="text-gray-600 text-sm sm:text-base">#{invoices[0]?.invoice_number || 'INV-0001'}</p>
+                                <p className="text-gray-600 text-sm sm:text-base">#{invoices[0]?.invoice_number || formValues.invoice_number}</p>
                                 <div className="mt-4 space-y-1">
                                   <div className="text-xs sm:text-sm">
                                     <span className="text-gray-600">Invoice Date: </span>
-                                    <span className="text-gray-800">{invoices[0]?.date || 'Not set'}</span>
+                                    <span className="text-gray-800">{invoices[0]?.date || formValues.date}</span>
                                   </div>
                                   <div className="text-xs sm:text-sm">
                                     <span className="text-gray-600">Due Date: </span>
-                                    <span className="text-gray-800">{invoices[0]?.due_date || 'Not set'}</span>
+                                    <span className="text-gray-800">{invoices[0]?.due_date || formValues.due_date}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1257,12 +1291,12 @@ export default function InvoiceForm() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {invoices[0]?.items?.map((item) => (
+                                  {(invoices[0]?.items || formValues.items)?.map((item) => (
                                     <tr key={item.id} className="border-b border-gray-100">
                                       <td className="py-3 text-gray-800 text-xs sm:text-sm">{item.description}</td>
                                       <td className="py-3 text-center text-gray-600 text-xs sm:text-sm">{item.quantity}</td>
-                                      <td className="py-3 text-right text-gray-600 text-xs sm:text-sm">{getCurrencySymbol(invoices[0]?.currency || 'USD')} {item.rate.toFixed(2)}</td>
-                                      <td className="py-3 text-right text-gray-800 font-medium text-xs sm:text-sm">{getCurrencySymbol(invoices[0]?.currency || 'USD')} {(item.quantity * item.rate).toFixed(2)}</td>
+                                      <td className="py-3 text-right text-gray-600 text-xs sm:text-sm">{getCurrencySymbol(invoices[0]?.currency || formValues.currency)} {item.rate.toFixed(2)}</td>
+                                      <td className="py-3 text-right text-gray-800 font-medium text-xs sm:text-sm">{getCurrencySymbol(invoices[0]?.currency || formValues.currency)} {(item.quantity * item.rate).toFixed(2)}</td>
                                     </tr>
                                   )) || (
                                       <tr>
@@ -1276,22 +1310,22 @@ export default function InvoiceForm() {
                               <div className="w-full sm:w-64">
                                 <div className="flex justify-between py-2 border-b border-gray-200">
                                   <span className="text-gray-600 text-sm sm:text-base">Subtotal:</span>
-                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(invoices[0]?.currency || 'USD')} {invoices[0]?.subtotal?.toFixed(2) || '0.00'}</span>
+                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(invoices[0]?.currency || formValues.currency)} {(invoices[0]?.subtotal || calculateTotals(formValues.items, formValues.tax_rate).subtotal).toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between py-2 border-b border-gray-200">
-                                  <span className="text-gray-600 text-sm sm:text-base">Tax ({invoices[0]?.tax_rate || 0}%):</span>
-                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(invoices[0]?.currency || 'USD')} {invoices[0]?.tax_amount?.toFixed(2) || '0.00'}</span>
+                                  <span className="text-gray-600 text-sm sm:text-base">Tax ({invoices[0]?.tax_rate || formValues.tax_rate}%):</span>
+                                  <span className="text-gray-800 text-sm sm:text-base">{getCurrencySymbol(invoices[0]?.currency || formValues.currency)} {(invoices[0]?.tax_amount || calculateTotals(formValues.items, formValues.tax_rate).tax_amount).toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between py-3 border-b-2 border-gray-800">
                                   <span className="text-base sm:text-lg font-semibold text-gray-800">Total:</span>
-                                  <span className="text-base sm:text-lg font-bold text-gray-800">{getCurrencySymbol(invoices[0]?.currency || 'USD')} {invoices[0]?.total?.toFixed(2) || '0.00'}</span>
+                                  <span className="text-base sm:text-lg font-bold text-gray-800">{getCurrencySymbol(invoices[0]?.currency || formValues.currency)} {(invoices[0]?.total || calculateTotals(formValues.items, formValues.tax_rate).total).toFixed(2)}</span>
                                 </div>
                               </div>
                             </div>
-                            {invoices[0]?.notes && (
+                            {(invoices[0]?.notes || formValues.notes) && (
                               <div className="mb-8">
                                 <h3 className="font-semibold text-gray-800 mb-2 text-sm sm:text-base">Notes:</h3>
-                                <p className="text-gray-600 text-sm sm:text-base">{invoices[0].notes}</p>
+                                <p className="text-gray-600 text-sm sm:text-base">{invoices[0]?.notes || formValues.notes}</p>
                               </div>
                             )}
                             <div className="mt-12 pt-8 border-t border-gray-200 text-center text-gray-500 text-xs sm:text-sm">
