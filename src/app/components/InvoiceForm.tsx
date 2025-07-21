@@ -39,7 +39,6 @@ const getInitialValues = (): Invoice => ({
     id: '',
     name: '',
     email: '',
-    address: '',
     phone: '',
     vat: ''
   },
@@ -166,7 +165,7 @@ export default function InvoiceForm() {
     }
   }, [toast.visible]);
 
-  // Fetch companies and clients from Supabase on mount
+  // Fetch companies, clients, and invoices from Supabase on mount
   useEffect(() => {
     const fetchCompanies = async () => {
       const { data, error } = await supabase
@@ -194,8 +193,59 @@ export default function InvoiceForm() {
       setClients(data || []);
     };
 
+    const fetchInvoices = async () => {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select(`
+          *,
+          client:clients!client_id (*),
+          company:companies!company_id (*)
+        `);
+
+      if (error) {
+        console.error('Error fetching invoices:', error);
+        setToast({ message: 'Failed to fetch invoices.', type: 'error', visible: true });
+        return;
+      }
+
+      // Map Supabase data to Invoice type
+      const mappedInvoices: Invoice[] = data?.map((invoice) => ({
+        id: invoice.id,
+        invoice_number: invoice.invoice_number,
+        date: invoice.date,
+        due_date: invoice.due_date,
+        status: invoice.statuas,
+        currency: invoice.currency,
+        tax_rate: invoice.tax_rate,
+        client: {
+          id: invoice.client.id,
+          name: invoice.client.name,
+          email: invoice.client.email || '',
+          phone: invoice.client.phone || '',
+          vat: invoice.client.vat || '',
+          address: invoice.client.address || ''
+        },
+        company: {
+          id: invoice.company.id,
+          name: invoice.company.name,
+          email: invoice.company.email || '',
+          address: invoice.company.address || '',
+          logo: invoice.company.logo || null
+        },
+        items: invoice.items,
+        notes: invoice.notes || '',
+        subtotal: invoice.subtotal,
+        tax_amount: invoice.tax_amount,
+        total: invoice.total,
+        created_at: invoice.created_at
+      })) || [];
+
+      setInvoices(mappedInvoices);
+    };
+
     fetchCompanies();
     fetchClients();
+    fetchInvoices();
   }, []);
 
   // Calculate invoice totals
@@ -285,41 +335,7 @@ export default function InvoiceForm() {
       link.download = `invoice_${formValues.invoice_number}.pdf`;
       link.click();
     }
-  };;
-
-  // Helper function to generate PDF as Blob
-
-
-  // Handle save invoice
-  // const handleSaveInvoice = () => {
-  //   if (!selectedCompany || !selectedClient) {
-  //     setToast({ message: 'Please select a company and client before saving the invoice.', type: 'error', visible: true });
-  //     return;
-  //   }
-
-  //   const invoiceData: Invoice = {
-  //     ...formValues,
-  //     client: selectedClient,
-  //     company: selectedCompany,
-  //     ...calculateTotals(formValues.items, formValues.tax_rate)
-  //   };
-
-  //   const existingInvoiceIndex = invoices.findIndex(inv => inv.id === invoiceData.id);
-
-  //   let updatedInvoices: Invoice[];
-
-  //   if (existingInvoiceIndex >= 0) {
-  //     updatedInvoices = [...invoices];
-  //     updatedInvoices[existingInvoiceIndex] = invoiceData;
-  //     setToast({ message: 'Invoice updated successfully.', type: 'success', visible: true });
-  //   } else {
-  //     updatedInvoices = [invoiceData, ...invoices];
-  //     setToast({ message: 'Invoice created successfully.', type: 'success', visible: true });
-  //   }
-
-  //   setInvoices(updatedInvoices);
-  //   setActiveTab('history');
-  // };
+  };
 
   // Handle company form
   const handleCompanyInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -487,11 +503,13 @@ export default function InvoiceForm() {
   };
 
   // Handle invoice submission
-  const handleSubmitInvoice = (values: Invoice) => {
+  const handleSubmitInvoice = async (values: Invoice) => {
     if (!selectedCompany || !selectedClient) {
       setToast({ message: 'Please select a company and client before saving the invoice.', type: 'error', visible: true });
       return;
     }
+
+    const { subtotal, tax_amount, total } = calculateTotals(values.items, values.tax_rate);
 
     const invoiceData: Invoice = {
       ...values,
@@ -500,33 +518,83 @@ export default function InvoiceForm() {
       company: selectedCompany,
       status: values.status || 'draft',
       created_at: values.created_at || new Date().toISOString(),
-      ...calculateTotals(values.items, values.tax_rate)
+      subtotal,
+      tax_amount,
+      total
     };
 
-    const existingInvoiceIndex = invoices.findIndex(inv => inv.id === invoiceData.id);
+    try {
+      const invoiceForSupabase = {
+        id: invoiceData.id,
+        invoice_number: invoiceData.invoice_number,
+        date: invoiceData.date,
+        due_date: invoiceData.due_date,
+        status: invoiceData.status,
+        currency: invoiceData.currency,
+        tax_rate: invoiceData.tax_rate,
+        client_id: invoiceData.client.id,
+        company_id: invoiceData.company.id,
+        items: invoiceData.items,
+        notes: invoiceData.notes || null,
+        subtotal: invoiceData.subtotal,
+        tax_amount: invoiceData.tax_amount,
+        total: invoiceData.total,
+        created_at: invoiceData.created_at
+      };
 
-    let updatedInvoices: Invoice[];
+      const existingInvoiceIndex = invoices.findIndex(inv => inv.id === invoiceData.id);
 
-    if (existingInvoiceIndex >= 0) {
-      updatedInvoices = [...invoices];
-      updatedInvoices[existingInvoiceIndex] = invoiceData;
-      setToast({ message: 'Invoice updated successfully.', type: 'success', visible: true });
-    } else {
-      updatedInvoices = [invoiceData, ...invoices];
-      setToast({ message: 'Invoice created successfully.', type: 'success', visible: true });
+      if (existingInvoiceIndex >= 0) {
+        // Update existing invoice in Supabase
+        const { error } = await supabase
+          .from('invoices')
+          .update(invoiceForSupabase)
+          .eq('id', invoiceData.id);
+
+        if (error) throw error;
+
+        const updatedInvoices = [...invoices];
+        updatedInvoices[existingInvoiceIndex] = invoiceData;
+        setInvoices(updatedInvoices);
+        setToast({ message: 'Invoice updated successfully.', type: 'success', visible: true });
+      } else {
+        // Insert new invoice into Supabase
+        const { error } = await supabase
+          .from('invoices')
+          .insert([invoiceForSupabase]);
+
+        if (error) throw error;
+
+        setInvoices([invoiceData, ...invoices]);
+        setToast({ message: 'Invoice created successfully.', type: 'success', visible: true });
+      }
+
+      setFormValues(invoiceData);
+      saveFormValues(invoiceData);
+      setActiveTab('preview');
+    } catch (error) {
+      console.error('Error saving invoice:', error);
+      setToast({ message: 'Failed to save invoice. Please try again.', type: 'error', visible: true });
     }
-
-    setInvoices(updatedInvoices);
-    setFormValues(invoiceData);
-    saveFormValues(invoiceData);
-    setActiveTab('preview');
   };
 
   // Handle invoice actions
-  const handleDeleteInvoice = (id: string) => {
-    const updatedInvoices = invoices.filter(invoice => invoice.id !== id);
-    setInvoices(updatedInvoices);
-    setToast({ message: 'Invoice deleted successfully.', type: 'success', visible: true });
+  const handleDeleteInvoice = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('invoices')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      const updatedInvoices = invoices.filter(invoice => invoice.id !== id);
+      setInvoices(updatedInvoices);
+      setToast({ message: 'Invoice deleted successfully.', type: 'success', visible: true });
+    } catch (error) {
+      console.error('Error deleting invoice:', error);
+      setToast({ message: 'Failed to delete invoice.', type: 'error', visible: true });
+    }
   };
 
   const handleEditInvoice = (invoice: Invoice) => {
@@ -1194,7 +1262,6 @@ export default function InvoiceForm() {
                                   <LucideSave className="w-4 h-4" />
                                   <span className="text-sm sm:text-base">Save Invoice</span>
                                 </button>
-                               
                               </div>
                             </Form>
                           )}
@@ -1204,13 +1271,6 @@ export default function InvoiceForm() {
                       {activeTab === 'preview' && (
                         <div className='space-y-6'>
                           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                            {/* <button
-                              onClick={handleSaveInvoice}
-                              className="flex-1 sm:flex-none inline-flex items-center justify-center space-x-2 px-4 py-3 rounded-xl font-semibold transition-all duration-300 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-400/50 hover:from-green-500/30 hover:to-emerald-500/30 hover:border-green-400/70 text-green-400 shadow-lg shadow-green-500/20"
-                            >
-                              <LucideSave className="w-4 h-4" />
-                              <span className="text-sm sm:text-base">Save Invoice</span>
-                            </button> */}
                             <button className="flex-1 sm:flex-none inline-flex items-center justify-center space-x-2 px-4 py-3 rounded-xl font-semibold transition-all duration-300 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-400/50 hover:from-blue-500/30 hover:to-cyan-500/30 hover:border-blue-400/70 text-blue-400 shadow-lg shadow-blue-500/20">
                               {handleDownloadPDF()}
                             </button>
@@ -1360,7 +1420,7 @@ export default function InvoiceForm() {
                                               invoice.status === 'overdue' ? 'bg-red-500/20 text-red-400' :
                                                 'bg-gray-600/20 text-gray-400'
                                             }`}>
-                                            {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                                            
                                           </span>
                                         </td>
                                         <td className="py-4 px-3 text-right">

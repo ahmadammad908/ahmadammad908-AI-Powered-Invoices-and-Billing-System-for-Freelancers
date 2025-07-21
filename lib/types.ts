@@ -31,6 +31,7 @@ export type Invoice = {
   date: string;
   due_date: string;
   status: InvoiceStatus;
+  
   currency: string;
   tax_rate: number;
   client: Client;
