@@ -4,7 +4,7 @@ import { Formik, Form, Field, FieldArray, ErrorMessage, FieldArrayRenderProps } 
 import * as Yup from 'yup';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LucideSave, LucideUsers, LucidePlus, LucideShield, LucideInfo, LucideTrash2, LucideSquarePen, LucideBuilding2, LucideEye, LucideDownload, LucideShare2, LucideCalendar, LucideGlobe, LucideSearch, LucideFilter, LucideUpload, LucideChevronLeft, LucideChevronRight, LucideCheckCircle, LucideAlertCircle } from "lucide-react";
-import { PDFDownloadLink ,pdf} from '@react-pdf/renderer';
+import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
 import { InvoicePDF } from './InvoicePDF';
 import { Invoice, Client, CompanyDetails, InvoiceItem } from '../../../lib/types';
 import { supabase } from '../../../lib/database';
@@ -242,10 +242,10 @@ export default function InvoiceForm() {
   const handleShare = async () => {
     try {
       if (!navigator.share) {
-        setToast({ 
-          message: 'Web Share API not supported. Downloading instead.', 
-          type: 'error', 
-          visible: true 
+        setToast({
+          message: 'Web Share API not supported. Downloading instead.',
+          type: 'error',
+          visible: true
         });
         // Trigger download
         const link = document.createElement('a');
@@ -264,19 +264,19 @@ export default function InvoiceForm() {
         title: `Invoice ${currentInvoice.invoice_number}`,
         text: `Invoice from ${currentInvoice.company.name} to ${currentInvoice.client.name}`,
         files: [new File(
-          [pdfBlob], 
-          `invoice_${currentInvoice.invoice_number}.pdf`, 
+          [pdfBlob],
+          `invoice_${currentInvoice.invoice_number}.pdf`,
           { type: 'application/pdf' }
         )]
       });
     } catch (error) {
       console.error("Sharing failed:", error);
-      setToast({ 
-        message: 'Failed to share invoice. Try downloading instead.', 
-        type: 'error', 
-        visible: true 
+      setToast({
+        message: 'Failed to share invoice. Try downloading instead.',
+        type: 'error',
+        visible: true
       });
-      
+
       // Fallback to download
       const link = document.createElement('a');
       const pdfBlob = await pdf(<InvoicePDF invoice={getCurrentInvoice()} />).toBlob();
@@ -288,38 +288,38 @@ export default function InvoiceForm() {
   };;
 
   // Helper function to generate PDF as Blob
- 
+
 
   // Handle save invoice
-  const handleSaveInvoice = () => {
-    if (!selectedCompany || !selectedClient) {
-      setToast({ message: 'Please select a company and client before saving the invoice.', type: 'error', visible: true });
-      return;
-    }
+  // const handleSaveInvoice = () => {
+  //   if (!selectedCompany || !selectedClient) {
+  //     setToast({ message: 'Please select a company and client before saving the invoice.', type: 'error', visible: true });
+  //     return;
+  //   }
 
-    const invoiceData: Invoice = {
-      ...formValues,
-      client: selectedClient,
-      company: selectedCompany,
-      ...calculateTotals(formValues.items, formValues.tax_rate)
-    };
+  //   const invoiceData: Invoice = {
+  //     ...formValues,
+  //     client: selectedClient,
+  //     company: selectedCompany,
+  //     ...calculateTotals(formValues.items, formValues.tax_rate)
+  //   };
 
-    const existingInvoiceIndex = invoices.findIndex(inv => inv.id === invoiceData.id);
+  //   const existingInvoiceIndex = invoices.findIndex(inv => inv.id === invoiceData.id);
 
-    let updatedInvoices: Invoice[];
+  //   let updatedInvoices: Invoice[];
 
-    if (existingInvoiceIndex >= 0) {
-      updatedInvoices = [...invoices];
-      updatedInvoices[existingInvoiceIndex] = invoiceData;
-      setToast({ message: 'Invoice updated successfully.', type: 'success', visible: true });
-    } else {
-      updatedInvoices = [invoiceData, ...invoices];
-      setToast({ message: 'Invoice created successfully.', type: 'success', visible: true });
-    }
+  //   if (existingInvoiceIndex >= 0) {
+  //     updatedInvoices = [...invoices];
+  //     updatedInvoices[existingInvoiceIndex] = invoiceData;
+  //     setToast({ message: 'Invoice updated successfully.', type: 'success', visible: true });
+  //   } else {
+  //     updatedInvoices = [invoiceData, ...invoices];
+  //     setToast({ message: 'Invoice created successfully.', type: 'success', visible: true });
+  //   }
 
-    setInvoices(updatedInvoices);
-    setActiveTab('history');
-  };
+  //   setInvoices(updatedInvoices);
+  //   setActiveTab('history');
+  // };
 
   // Handle company form
   const handleCompanyInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -1189,10 +1189,12 @@ export default function InvoiceForm() {
                                 </div>
                                 <button
                                   type="submit"
-                                  className="w-full sm:w-auto px-6 py-3 bg-blue-500/20 border border-blue-400 rounded-lg text-blue-400 font-medium hover:bg-blue-500/30 hover:border-blue-400 transition-all duration-200 shadow-lg shadow-blue-500/10"
+                                  className="flex-1 sm:flex-none inline-flex items-center justify-center space-x-2 px-4 py-3 rounded-xl font-semibold transition-all duration-300 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-400/50 hover:from-green-500/30 hover:to-emerald-500/30 hover:border-green-400/70 text-green-400 shadow-lg shadow-green-500/20"
                                 >
-                                  Save Invoice
+                                  <LucideSave className="w-4 h-4" />
+                                  <span className="text-sm sm:text-base">Save Invoice</span>
                                 </button>
+                               
                               </div>
                             </Form>
                           )}
@@ -1202,13 +1204,13 @@ export default function InvoiceForm() {
                       {activeTab === 'preview' && (
                         <div className='space-y-6'>
                           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                            <button
+                            {/* <button
                               onClick={handleSaveInvoice}
                               className="flex-1 sm:flex-none inline-flex items-center justify-center space-x-2 px-4 py-3 rounded-xl font-semibold transition-all duration-300 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-400/50 hover:from-green-500/30 hover:to-emerald-500/30 hover:border-green-400/70 text-green-400 shadow-lg shadow-green-500/20"
                             >
                               <LucideSave className="w-4 h-4" />
                               <span className="text-sm sm:text-base">Save Invoice</span>
-                            </button>
+                            </button> */}
                             <button className="flex-1 sm:flex-none inline-flex items-center justify-center space-x-2 px-4 py-3 rounded-xl font-semibold transition-all duration-300 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-400/50 hover:from-blue-500/30 hover:to-cyan-500/30 hover:border-blue-400/70 text-blue-400 shadow-lg shadow-blue-500/20">
                               {handleDownloadPDF()}
                             </button>
