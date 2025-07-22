@@ -264,6 +264,7 @@ export default function InvoiceForm() {
 
   // Handle download as PDF
   const handleDownloadPDF = () => {
+  
     const currentInvoice = {
       ...formValues,
       client: selectedClient || formValues.client,
@@ -290,6 +291,7 @@ export default function InvoiceForm() {
 
   // Handle share
   const handleShare = async () => {
+   
     try {
       if (!navigator.share) {
         setToast({
@@ -524,6 +526,7 @@ export default function InvoiceForm() {
     };
 
     try {
+ 
       const invoiceForSupabase = {
         id: invoiceData.id,
         invoice_number: invoiceData.invoice_number,
@@ -573,6 +576,7 @@ export default function InvoiceForm() {
       saveFormValues(invoiceData);
       setActiveTab('preview');
     } catch (error) {
+     
       console.error('Error saving invoice:', error);
       setToast({ message: 'Failed to save invoice. Please try again.', type: 'error', visible: true });
     }
@@ -1421,7 +1425,7 @@ export default function InvoiceForm() {
                                               invoice.status === 'overdue' ? 'bg-red-500/20 text-red-400' :
                                                 'bg-gray-600/20 text-gray-400'
                                             }`}>
-                                            
+
                                           </span>
                                         </td>
                                         <td className="py-4 px-3 text-right">
