@@ -1314,6 +1314,7 @@ export default function InvoiceForm() {
                                   <p className="font-medium">{selectedClient?.name || 'Client Name'}</p>
                                   {selectedClient?.email && <p>{selectedClient.email}</p>}
                                   {selectedClient?.address && <p>{selectedClient.address}</p>}
+                                  {selectedClient?.phone && <p>{selectedClient.phone}</p>} {/* Add phone number */}
                                   {selectedClient?.vat && <p>VAT: {selectedClient.vat}</p>}
                                 </div>
                               </div>

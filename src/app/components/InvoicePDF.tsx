@@ -303,6 +303,10 @@ export const InvoicePDF = ({ invoice }: InvoicePDFProps) => {
               {invoice.client.address && (
                 <Text style={styles.clientText}>{invoice.client.address}</Text>
               )}
+               {invoice.client.phone && ( // Add phone number display
+                <Text style={styles.clientText}>{invoice.client.phone}</Text>
+              )}
+
               {invoice.client.vat && (
                 <Text style={styles.clientText}>VAT: {invoice.client.vat}</Text>
               )}
