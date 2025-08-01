@@ -3,12 +3,13 @@ import { useState, useRef, useEffect } from 'react';
 import { Formik, Form, Field, FieldArray, ErrorMessage, FieldArrayRenderProps } from 'formik';
 import * as Yup from 'yup';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LucideSave, LucideUsers, LucidePlus, LucideShield, LucideInfo, LucideTrash2, LucideSquarePen, LucideBuilding2, LucideEye, LucideDownload, LucideShare2, LucideCalendar, LucideGlobe, LucideSearch, LucideFilter, LucideUpload, LucideChevronLeft, LucideChevronRight, LucideCheckCircle, LucideAlertCircle } from "lucide-react";
+import { LucideSave, LucideUsers, LucidePlus, LucideShield, LucideInfo, LucideTrash2, LucideSquarePen, LucideBuilding2, LucideEye, LucideDownload, LucideShare2, LucideCalendar, LucideGlobe, LucideSearch, LucideFilter, LucideUpload, LucideChevronLeft, LucideChevronRight, LucideCheckCircle, LucideAlertCircle, LucideSparkles } from "lucide-react";
 import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
 import { InvoicePDF } from './InvoicePDF';
 import { Invoice, Client, CompanyDetails, InvoiceItem } from '../../../lib/types';
 import { supabase } from '../../../lib/database';
 import Image from 'next/image';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Validation Schema
 const InvoiceSchema = Yup.object().shape({
@@ -40,7 +41,8 @@ const getInitialValues = (): Invoice => ({
     name: '',
     email: '',
     phone: '',
-    vat: ''
+    vat: '',
+    address: ''
   },
   company: {
     id: '',
@@ -69,9 +71,10 @@ const currencyOptions = [
 
 type ToastType = {
   message: string;
-  type: 'success' | 'error';
+  type: 'success' | 'error' | 'info';
   visible: boolean;
 };
+
 
 export default function InvoiceForm() {
   // State
@@ -106,8 +109,14 @@ export default function InvoiceForm() {
     visible: false
   });
   const [formValues, setFormValues] = useState<Invoice>(getInitialValues());
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [showAiPanel, setShowAiPanel] = useState(false);
+
   const invoicesPerPage = 5;
   const previewRef = useRef<HTMLDivElement>(null);
+  const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY || '');
 
   // Load saved data from localStorage on component mount
   useEffect(() => {
@@ -132,6 +141,7 @@ export default function InvoiceForm() {
         }
       } catch (error) {
         console.error('Error loading saved data:', error);
+        showToast('Error loading saved data', 'error');
       }
     };
 
@@ -165,87 +175,82 @@ export default function InvoiceForm() {
     }
   }, [toast.visible]);
 
+  // Helper function to show toast messages
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ message, type, visible: true });
+  };
+
   // Fetch companies, clients, and invoices from Supabase on mount
   useEffect(() => {
-    const fetchCompanies = async () => {
-      const { data, error } = await supabase
-        .from('companies')
-        .select('*');
+    const fetchData = async () => {
+      try {
+        showToast('Loading data...', 'info');
 
-      if (error) {
-        console.error('Error fetching companies:', error);
-        setToast({ message: 'Failed to fetch companies.', type: 'error', visible: true });
-        return;
+        // Fetch companies
+        const { data: companiesData, error: companiesError } = await supabase
+          .from('companies')
+          .select('*');
+        if (companiesError) throw companiesError;
+        setCompanies(companiesData || []);
+
+        // Fetch clients
+        const { data: clientsData, error: clientsError } = await supabase
+          .from('clients')
+          .select('*');
+        if (clientsError) throw clientsError;
+        setClients(clientsData || []);
+
+        // Fetch invoices with related data
+        const { data: invoicesData, error: invoicesError } = await supabase
+          .from('invoices')
+          .select(`
+            *,
+            client:clients!client_id (*),
+            company:companies!company_id (*)
+          `);
+        if (invoicesError) throw invoicesError;
+
+        // Map Supabase data to Invoice type
+        const mappedInvoices: Invoice[] = invoicesData?.map((invoice) => ({
+          id: invoice.id,
+          invoice_number: invoice.invoice_number,
+          date: invoice.date,
+          due_date: invoice.due_date,
+          status: invoice.status || 'draft',
+          currency: invoice.currency,
+          tax_rate: invoice.tax_rate,
+          client: {
+            id: invoice.client.id,
+            name: invoice.client.name,
+            email: invoice.client.email || '',
+            phone: invoice.client.phone || '',
+            vat: invoice.client.vat || '',
+            address: invoice.client.address || ''
+          },
+          company: {
+            id: invoice.company.id,
+            name: invoice.company.name,
+            email: invoice.company.email || '',
+            address: invoice.company.address || '',
+            logo: invoice.company.logo || null
+          },
+          items: invoice.items,
+          notes: invoice.notes || '',
+          subtotal: invoice.subtotal,
+          tax_amount: invoice.tax_amount,
+          total: invoice.total,
+          created_at: invoice.created_at
+        })) || [];
+
+        setInvoices(mappedInvoices);
+        showToast('Data loaded successfully', 'success');
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        showToast('Failed to load data', 'error');
       }
-      setCompanies(data || []);
     };
 
-    const fetchClients = async () => {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('*');
-
-      if (error) {
-        console.error('Error fetching clients:', error);
-        setToast({ message: 'Failed to fetch clients.', type: 'error', visible: true });
-        return;
-      }
-      setClients(data || []);
-    };
-
-    const fetchInvoices = async () => {
-      const { data, error } = await supabase
-        .from('invoices')
-        .select(`
-          *,
-          client:clients!client_id (*),
-          company:companies!company_id (*)
-        `);
-
-      if (error) {
-        console.error('Error fetching invoices:', error);
-        setToast({ message: 'Failed to fetch invoices.', type: 'error', visible: true });
-        return;
-      }
-
-      // Map Supabase data to Invoice type
-      const mappedInvoices: Invoice[] = data?.map((invoice) => ({
-        id: invoice.id,
-        invoice_number: invoice.invoice_number,
-        date: invoice.date,
-        due_date: invoice.due_date,
-        status: invoice.statuas,
-        currency: invoice.currency,
-        tax_rate: invoice.tax_rate,
-        client: {
-          id: invoice.client.id,
-          name: invoice.client.name,
-          email: invoice.client.email || '',
-          phone: invoice.client.phone || '',
-          vat: invoice.client.vat || '',
-          address: invoice.client.address || ''
-        },
-        company: {
-          id: invoice.company.id,
-          name: invoice.company.name,
-          email: invoice.company.email || '',
-          address: invoice.company.address || '',
-          logo: invoice.company.logo || null
-        },
-        items: invoice.items,
-        notes: invoice.notes || '',
-        subtotal: invoice.subtotal,
-        tax_amount: invoice.tax_amount,
-        total: invoice.total,
-        created_at: invoice.created_at
-      })) || [];
-
-      setInvoices(mappedInvoices);
-    };
-
-    fetchCompanies();
-    fetchClients();
-    fetchInvoices();
+    fetchData();
   }, []);
 
   // Calculate invoice totals
@@ -257,14 +262,10 @@ export default function InvoiceForm() {
   };
 
   // Handle form values persistence
-  const saveFormValues = (values: Invoice) => {
-    setFormValues(values);
-    localStorage.setItem('invoiceFormData', JSON.stringify(values));
-  };
+
 
   // Handle download as PDF
   const handleDownloadPDF = () => {
-  
     const currentInvoice = {
       ...formValues,
       client: selectedClient || formValues.client,
@@ -288,17 +289,21 @@ export default function InvoiceForm() {
       </PDFDownloadLink>
     );
   };
+  const saveFormValues = (values: Invoice) => {
+    try {
+      setFormValues(values);
+      localStorage.setItem('invoiceFormData', JSON.stringify(values));
+    } catch (error) {
+      console.error('Error saving form values:', error);
+      showToast('Failed to save form data', 'error');
+    }
+  };
 
   // Handle share
   const handleShare = async () => {
-   
     try {
       if (!navigator.share) {
-        setToast({
-          message: 'Web Share API not supported. Downloading instead.',
-          type: 'error',
-          visible: true
-        });
+        showToast('Web Share API not supported. Downloading instead.', 'info');
         // Trigger download
         const link = document.createElement('a');
         const pdfBlob = await pdf(<InvoicePDF invoice={getCurrentInvoice()} />).toBlob();
@@ -323,11 +328,7 @@ export default function InvoiceForm() {
       });
     } catch (error) {
       console.error("Sharing failed:", error);
-      setToast({
-        message: 'Failed to share invoice. Try downloading instead.',
-        type: 'error',
-        visible: true
-      });
+      showToast('Failed to share invoice. Try downloading instead.', 'error');
 
       // Fallback to download
       const link = document.createElement('a');
@@ -357,7 +358,7 @@ export default function InvoiceForm() {
 
   const handleSaveCompany = async () => {
     if (!companyFormData.name) {
-      setToast({ message: 'Company name is required.', type: 'error', visible: true });
+      showToast('Company name is required.', 'error');
       return;
     }
 
@@ -395,10 +396,10 @@ export default function InvoiceForm() {
       setSelectedCompany(companyData);
       setShowCompanyForm(false);
       setCompanyFormData({ name: '', email: '', address: '', logo: null });
-      setToast({ message: 'Company saved successfully.', type: 'success', visible: true });
+      showToast('Company saved successfully.', 'success');
     } catch (error) {
       console.error('Error saving company:', error);
-      setToast({ message: 'Failed to save company. Please try again.', type: 'error', visible: true });
+      showToast('Failed to save company. Please try again.', 'error');
     } finally {
       setIsCompanySaving(false);
     }
@@ -412,7 +413,7 @@ export default function InvoiceForm() {
 
   const handleSaveClient = async () => {
     if (!clientFormData.name) {
-      setToast({ message: 'Client name is required.', type: 'error', visible: true });
+      showToast('Client name is required.', 'error');
       return;
     }
 
@@ -451,10 +452,10 @@ export default function InvoiceForm() {
       setSelectedClient(clientData);
       setShowClientForm(false);
       setClientFormData({ name: '', email: '', phone: '', vat: '', address: '' });
-      setToast({ message: 'Client saved successfully.', type: 'success', visible: true });
+      showToast('Client saved successfully.', 'success');
     } catch (error) {
       console.error('Error saving client:', error);
-      setToast({ message: 'Failed to save client. Please try again.', type: 'error', visible: true });
+      showToast('Failed to save client. Please try again.', 'error');
     } finally {
       setIsClientSaving(false);
     }
@@ -475,10 +476,10 @@ export default function InvoiceForm() {
         setSelectedCompany(null);
         localStorage.removeItem('selectedCompany');
       }
-      setToast({ message: 'Company deleted successfully.', type: 'success', visible: true });
+      showToast('Company deleted successfully.', 'success');
     } catch (error) {
       console.error('Error deleting company:', error);
-      setToast({ message: 'Failed to delete company.', type: 'error', visible: true });
+      showToast('Failed to delete company.', 'error');
     }
   };
 
@@ -497,17 +498,17 @@ export default function InvoiceForm() {
         setSelectedClient(null);
         localStorage.removeItem('selectedClient');
       }
-      setToast({ message: 'Client deleted successfully.', type: 'success', visible: true });
+      showToast('Client deleted successfully.', 'success');
     } catch (error) {
       console.error('Error deleting client:', error);
-      setToast({ message: 'Failed to delete client.', type: 'error', visible: true });
+      showToast('Failed to delete client.', 'error');
     }
   };
 
   // Handle invoice submission
   const handleSubmitInvoice = async (values: Invoice) => {
     if (!selectedCompany || !selectedClient) {
-      setToast({ message: 'Please select a company and client before saving the invoice.', type: 'error', visible: true });
+      showToast('Please select a company and client before saving the invoice.', 'error');
       return;
     }
 
@@ -526,7 +527,6 @@ export default function InvoiceForm() {
     };
 
     try {
- 
       const invoiceForSupabase = {
         id: invoiceData.id,
         invoice_number: invoiceData.invoice_number,
@@ -559,7 +559,7 @@ export default function InvoiceForm() {
         const updatedInvoices = [...invoices];
         updatedInvoices[existingInvoiceIndex] = invoiceData;
         setInvoices(updatedInvoices);
-        setToast({ message: 'Invoice updated successfully.', type: 'success', visible: true });
+        showToast('Invoice updated successfully.', 'success');
       } else {
         // Insert new invoice into Supabase
         const { error } = await supabase
@@ -569,16 +569,15 @@ export default function InvoiceForm() {
         if (error) throw error;
 
         setInvoices([invoiceData, ...invoices]);
-        setToast({ message: 'Invoice created successfully.', type: 'success', visible: true });
+        showToast('Invoice created successfully.', 'success');
       }
 
       setFormValues(invoiceData);
       saveFormValues(invoiceData);
       setActiveTab('preview');
     } catch (error) {
-     
       console.error('Error saving invoice:', error);
-      setToast({ message: 'Failed to save invoice. Please try again.', type: 'error', visible: true });
+      showToast('Failed to save invoice. Please try again.', 'error');
     }
   };
 
@@ -594,10 +593,10 @@ export default function InvoiceForm() {
 
       const updatedInvoices = invoices.filter(invoice => invoice.id !== id);
       setInvoices(updatedInvoices);
-      setToast({ message: 'Invoice deleted successfully.', type: 'success', visible: true });
+      showToast('Invoice deleted successfully.', 'success');
     } catch (error) {
       console.error('Error deleting invoice:', error);
-      setToast({ message: 'Failed to delete invoice.', type: 'error', visible: true });
+      showToast('Failed to delete invoice.', 'error');
     }
   };
 
@@ -609,10 +608,147 @@ export default function InvoiceForm() {
     setActiveTab('details');
   };
 
+  // AI Generation Function with improved handling
+  const generateWithAI = async (values: Invoice, setValues: (values: Invoice) => void) => {
+    if (!aiPrompt.trim()) {
+      setAiError('Please enter a description of what you need');
+      return;
+    }
+
+    setIsGenerating(true);
+    setAiError('');
+
+    try {
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+      const prompt = `
+    You are an expert invoice generator. Create a complete invoice based on this request:
+    "${aiPrompt}"
+
+    Extract and include these details from the request:
+    1. Invoice number (format: INV-XXX)
+    2. Invoice date (extract from prompt or use today's date)
+    3. Due date (extract from prompt or calculate 7-30 days from invoice date)
+    4. Company details (from prompt or use default)
+    5. Client details (from prompt or use default)
+    6. Items with description, quantity, rate
+    7. Currency (extract from prompt or default to USD)
+    8. Tax rate (extract percentage from prompt if mentioned)
+    9. Payment terms (extract from prompt or use default)
+
+    Supported date formats: YYYY-MM-DD, "today", "tomorrow", "in 7 days", "next week", "15th July"
+    Supported currencies: USD, EUR, GBP, PKR
+    Tax rate should be a percentage (e.g., 17, 5.5)
+
+    Return ONLY a JSON object with this exact structure:
+    {
+      "invoice_number": "string",
+      "date": "YYYY-MM-DD",
+      "due_date": "YYYY-MM-DD",
+      "currency": "string",
+      "tax_rate": number,
+      "client": {
+        "name": "string",
+        "email": "string",
+        "address": "string"
+      },
+      "company": {
+        "name": "string",
+        "address": "string"
+      },
+      "items": [
+        {
+          "description": "string",
+          "quantity": number,
+          "rate": number
+        }
+      ],
+      "notes": "string"
+    }
+    `;
+
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      let text = response.text();
+
+      // Clean the response
+      text = text.trim().replace(/^```json|```$/g, '').trim();
+
+      try {
+        const generatedData = JSON.parse(text);
+
+        // Calculate totals with the tax rate from AI or existing value
+        const taxRate = generatedData.tax_rate || values.tax_rate || 0;
+        const subtotal = generatedData.items.reduce((sum: number, item: any) =>
+          sum + (item.quantity * item.rate), 0);
+        const tax_amount = subtotal * (taxRate / 100);
+        const total = subtotal + tax_amount;
+
+        // Format dates properly
+        const formatDate = (dateString: string) => {
+          if (!dateString) return new Date().toISOString().split('T')[0];
+          try {
+            return new Date(dateString).toISOString().split('T')[0];
+          } catch {
+            return new Date().toISOString().split('T')[0];
+          }
+        };
+
+        // Update form state
+        const newValues = {
+          ...values,
+          invoice_number: generatedData.invoice_number || `INV-${Math.floor(Math.random() * 1000)}`,
+          date: formatDate(generatedData.date),
+          due_date: formatDate(generatedData.due_date),
+          currency: generatedData.currency || values.currency || 'USD',
+          tax_rate: taxRate,
+          client: {
+            ...values.client,
+            name: generatedData.client?.name || selectedClient?.name || 'Generic Client',
+            email: generatedData.client?.email || selectedClient?.email || '',
+            address: generatedData.client?.address || selectedClient?.address || ''
+          },
+          company: {
+            ...values.company,
+            name: generatedData.company?.name || selectedCompany?.name || 'Generic Company',
+            address: generatedData.company?.address || selectedCompany?.address || ''
+          },
+          items: generatedData.items.map((item: any, index: number) => ({
+            ...item,
+            id: Date.now().toString() + index,
+            total: item.quantity * item.rate
+          })),
+          notes: generatedData.notes || values.notes,
+          subtotal,
+          tax_amount,
+          total
+        };
+
+        setValues(newValues);
+        saveFormValues(newValues);
+        showToast('Invoice generated successfully!', 'success');
+        setShowAiPanel(false);
+        setActiveTab('preview');
+      } catch (parseError) {
+        console.error('Error parsing AI response:', parseError);
+        console.error('Original response:', text);
+        setAiError('Failed to generate invoice. Please try a different description.');
+        showToast('Failed to generate invoice. Please try again.', 'error');
+      }
+    } catch (error) {
+      console.error('AI generation error:', error);
+      setAiError('Failed to connect to AI service. Please try again later.');
+      showToast('AI service unavailable. Please try again later.', 'error');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   // Filter invoices based on search term
   const filteredInvoices = invoices.filter(invoice =>
     invoice.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    invoice.client.name.toLowerCase().includes(searchTerm.toLowerCase())
+    invoice.client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    invoice.company.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Pagination
@@ -646,14 +782,112 @@ export default function InvoiceForm() {
             initial={{ opacity: 0, y: -50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -50 }}
-            className={`fixed top-4 right-4 p-4 rounded-lg shadow-lg flex items-center space-x-2 z-50 ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}
+            className={`fixed top-4 right-4 p-4 rounded-lg shadow-lg flex items-center space-x-2 z-50 ${toast.type === 'success' ? 'bg-green-600 text-white' :
+              toast.type === 'error' ? 'bg-red-600 text-white' :
+                'bg-blue-600 text-white'
+              }`}
           >
             {toast.type === 'success' ? (
               <LucideCheckCircle className="w-5 h-5" />
-            ) : (
+            ) : toast.type === 'error' ? (
               <LucideAlertCircle className="w-5 h-5" />
+            ) : (
+              <LucideInfo className="w-5 h-5" />
             )}
             <span>{toast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* AI Panel Modal */}
+      <AnimatePresence>
+        {showAiPanel && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+            onClick={() => !isGenerating && setShowAiPanel(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-gray-800 rounded-xl border border-gray-600 p-6 w-full max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-white flex items-center gap-2">
+                  <LucideSparkles className="text-yellow-400" />
+                  AI Invoice Assistant
+                </h3>
+                <button
+                  onClick={() => !isGenerating && setShowAiPanel(false)}
+                  className="text-gray-400 hover:text-white disabled:opacity-50"
+                  disabled={isGenerating}
+                >
+                  &times;
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">
+                    Describe what you need (be specific)
+                  </label>
+                  <textarea
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    className="w-full p-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 transition-all duration-200 resize-none"
+                    rows={4}
+                    placeholder="e.g. 'Generate invoice for Pearl Live Kitchen to Ahmad Ammad for Loaded Fries at $300'"
+                    disabled={isGenerating}
+                  />
+                  {aiError && (
+                    <div className="text-red-400 text-sm mt-2">{aiError}</div>
+                  )}
+                </div>
+
+                <div className="mb-4 bg-gray-700/50 p-3 rounded-lg border border-gray-600">
+                  <h4 className="text-sm font-medium text-gray-300 mb-2">Example prompts:</h4>
+                  <ul className="text-xs text-gray-400 space-y-1">
+                    <li>Create invoice for Pearl Live Kitchen to Ahmad Ammad for Loaded Fries at $300</li>
+                    <li>Generate invoice for 3 consulting sessions at $200/hour</li>
+                    <li>Bill John Doe for website maintenance, due in 14 days</li>
+                  </ul>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => setShowAiPanel(false)}
+                    disabled={isGenerating}
+                    className="px-4 py-2 bg-gray-700/50 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700 transition-all disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => generateWithAI(formValues, setFormValues)}
+                    disabled={isGenerating}
+                    className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg text-white hover:from-purple-700 hover:to-blue-700 transition-all flex items-center gap-2 disabled:opacity-70"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0H5a8 8 0 00-1 15.9z"></path>
+                        </svg>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <LucideSparkles className="w-4 h-4" />
+                        Generate Invoice
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1070,7 +1304,17 @@ export default function InvoiceForm() {
                         >
                           {({ values, setFieldValue }) => (
                             <Form className="space-y-6">
-                              <h3 className="text-2xl font-semibold text-white mb-6">Invoice Details</h3>
+                              <div className="flex justify-between items-center">
+                                <h3 className="text-2xl font-semibold text-white mb-6">Invoice Details</h3>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAiPanel(true)}
+                                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600/20 to-blue-600/20 border border-purple-400/50 rounded-lg text-purple-400 hover:from-purple-600/30 hover:to-blue-600/30 hover:border-purple-400/70 transition-all duration-200"
+                                >
+                                  <LucideSparkles className="w-4 h-4" />
+                                  <span className="text-sm sm:text-base">AI Assistant</span>
+                                </button>
+                              </div>
                               <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
                                 <div>
                                   <label className="block text-gray-300 text-sm font-medium mb-2">Invoice Number</label>
@@ -1285,16 +1529,34 @@ export default function InvoiceForm() {
                               <LucideShare2 className="w-4 h-4" />
                               <span className="hidden sm:inline text-sm">Share</span>
                             </button>
+
+
                           </div>
                           <div ref={previewRef} id="invoice-preview-container" className="bg-white rounded-xl p-4 sm:p-8 text-gray-800 shadow-lg max-w-4xl mx-auto">
                             <div className="flex flex-col sm:flex-row justify-between items-start mb-8 space-y-4 sm:space-y-0">
                               <div className="w-full sm:w-auto">
-                                {selectedCompany?.logo && (
-                                  <Image src={selectedCompany.logo} alt="Company Logo" width={64} height={64} className="h-16 mb-4" />
+                                {(selectedCompany?.logo || formValues.company.logo) && (
+                                  <Image
+                                    src={selectedCompany?.logo || formValues.company.logo || ''}
+                                    alt="Company Logo"
+                                    width={64}
+                                    height={64}
+                                    className="h-16 mb-4"
+                                  />
                                 )}
-                                <h2 className="text-lg sm:text-xl font-semibold">{selectedCompany?.name || 'Your Company'}</h2>
-                                {selectedCompany?.email && <p className="text-gray-600 text-sm sm:text-base">{selectedCompany.email}</p>}
-                                {selectedCompany?.address && <p className="text-gray-600 text-sm sm:text-base">{selectedCompany.address}</p>}
+                                <h2 className="text-lg sm:text-xl font-semibold">
+                                  {formValues.company.name || selectedCompany?.name || 'Your Company'}
+                                </h2>
+                                {(formValues.company.email || selectedCompany?.email) && (
+                                  <p className="text-gray-600 text-sm sm:text-base">
+                                    {formValues.company.email || selectedCompany?.email}
+                                  </p>
+                                )}
+                                {(formValues.company.address || selectedCompany?.address) && (
+                                  <p className="text-gray-600 text-sm sm:text-base">
+                                    {formValues.company.address || selectedCompany?.address}
+                                  </p>
+                                )}
                               </div>
                               <div className="text-left sm:text-right w-full sm:w-auto">
                                 <h1 className="text-xl sm:text-2xl font-bold text-gray-800">INVOICE</h1>
@@ -1315,11 +1577,13 @@ export default function InvoiceForm() {
                               <div>
                                 <h3 className="font-semibold text-gray-800 mb-2 text-sm sm:text-base">Bill To:</h3>
                                 <div className="text-gray-600 text-sm sm:text-base">
-                                  <p className="font-medium">{selectedClient?.name || 'Client Name'}</p>
-                                  {selectedClient?.email && <p>{selectedClient.email}</p>}
-                                  {selectedClient?.address && <p>{selectedClient.address}</p>}
-                                  {selectedClient?.phone && <p>{selectedClient.phone}</p>} {/* Add phone number */}
-                                  {selectedClient?.vat && <p>VAT: {selectedClient.vat}</p>}
+                                  <p className="font-medium">
+                                    {formValues.client.name || selectedClient?.name || 'Client Name'}
+                                  </p>
+                                  {(formValues.client.email || selectedClient?.email) && <p>{formValues.client.email || selectedClient?.email}</p>}
+                                  {(formValues.client.address || selectedClient?.address) && <p>{formValues.client.address || selectedClient?.address}</p>}
+                                  {(formValues.client.phone || selectedClient?.phone) && <p>{formValues.client.phone || selectedClient?.phone}</p>}
+                                  {(formValues.client.vat || selectedClient?.vat) && <p>VAT: {formValues.client.vat || selectedClient?.vat}</p>}
                                 </div>
                               </div>
                               <div></div>
@@ -1425,7 +1689,7 @@ export default function InvoiceForm() {
                                               invoice.status === 'overdue' ? 'bg-red-500/20 text-red-400' :
                                                 'bg-gray-600/20 text-gray-400'
                                             }`}>
-
+                                            {invoice.status}
                                           </span>
                                         </td>
                                         <td className="py-4 px-3 text-right">
